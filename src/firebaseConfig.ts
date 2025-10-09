@@ -11,7 +11,9 @@ const firebaseConfig = {
   projectId: "nextjschatapp-aef4d",
   storageBucket: "nextjschatapp-aef4d.appspot.com",
   appId: "1:3625358905:web:55f5eba2f1182615805fe8",
-  measurementId: "G-WWTRPFK661"
+  measurementId: "G-WWTRPFK661",
+  databaseURL: "https://nextjschatapp-aef4d-default-rtdb.firebaseio.com" // ✅ Add this
+
 };
 
 const app = initializeApp(firebaseConfig);

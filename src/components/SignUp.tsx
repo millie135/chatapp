@@ -23,7 +23,7 @@ export default function SignUp() {
 
       // Save additional info in Firestore
       await setDoc(doc(db, "users", user.uid), {
-        username,
+        username: username,
         email,
         avatar,
       });
