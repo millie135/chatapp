@@ -2,7 +2,9 @@
 import { FC, useEffect, useState, useRef } from "react";
 import { db, auth } from "@/firebaseConfig";
 import { rtdb } from "@/firebaseConfig"; // make sure rtdb is exported from your config
-import { ref, onValue } from "firebase/database";
+import { ref as rtdbRef, onValue } from "firebase/database";
+import { storage } from "@/firebaseConfig";
+import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 
 import {
   collection,
@@ -20,6 +22,7 @@ interface ChatBoxProps {
   chatWithUserId: string;
   chatWithUsername: string;
   chatWithAvatar?: string;
+  onReadMessages?: () => void;
 }
 
 interface Message {
@@ -29,6 +32,7 @@ interface Message {
   senderName: string;
   senderAvatar?: string;
   timestamp: any;
+  imageUrl?: string;
 }
 
 interface UserProfile {
@@ -41,11 +45,13 @@ const ChatBox: FC<ChatBoxProps> = ({
   chatWithUserId,
   chatWithUsername,
   chatWithAvatar,
+  onReadMessages
 }) => {
   const [message, setMessage] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [uploading, setUploading] = useState(false);
 
   // Scroll to bottom whenever messages update
   const scrollToBottom = () => {
@@ -64,7 +70,8 @@ const ChatBox: FC<ChatBoxProps> = ({
 
   useEffect(() => {
     const profileRef = doc(db, "users", chatWithUserId);
-    const statusRef = ref(rtdb, `/status/${chatWithUserId}`);
+    //const statusRef = ref(rtdb, `/status/${chatWithUserId}`);
+    const statusRef = rtdbRef(rtdb, `/status/${chatWithUserId}`);
 
     // Listen to Firestore for profile info
     const unsubscribeProfile = onSnapshot(profileRef, (docSnap) => {
@@ -88,10 +95,6 @@ const ChatBox: FC<ChatBoxProps> = ({
     };
   }, [chatWithUserId]);
 
-
-
-  
-
   useEffect(() => {
     const messagesRef = collection(
       db,
@@ -113,15 +116,21 @@ const ChatBox: FC<ChatBoxProps> = ({
         }
       });
 
-      if (batchUpdates.length > 0) await Promise.all(batchUpdates);
+      //if (batchUpdates.length > 0) await Promise.all(batchUpdates);
+      if (batchUpdates.length > 0) {
+        await Promise.all(batchUpdates);
+
+        // <-- call the callback to notify Home
+        if (onReadMessages) onReadMessages();
+      }
     });
     return () => unsubscribe();
-  }, [chatWithUserId]);
+  }, [chatWithUserId, onReadMessages]);
 
   useEffect(scrollToBottom, [messages]);
 
-  const sendMessage = async () => {
-    if (!message.trim()) return;
+  const sendMessage = async (text?: string, imageUrl?: string) => {
+    if (!text?.trim() && !imageUrl) return;
 
     const senderId = auth.currentUser!.uid;
     const senderName = auth.currentUser!.displayName || auth.currentUser!.email;
@@ -129,11 +138,12 @@ const ChatBox: FC<ChatBoxProps> = ({
 
     
     const messageData = {
-      text: message,
+      text: text || "",
       senderId,
       senderName,
       senderAvatar, 
       timestamp: serverTimestamp(),
+      imageUrl: imageUrl || null,
     };
 
     // Sender's path
@@ -153,6 +163,25 @@ const ChatBox: FC<ChatBoxProps> = ({
     }
   };
 
+  // Handle image upload
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+
+    const file = e.target.files[0];
+    const fileRef = storageRef(storage, `chatImages/${auth.currentUser!.uid}-${Date.now()}-${file.name}`);
+    setUploading(true);
+
+    try {
+      await uploadBytes(fileRef, file);
+      const imageUrl = await getDownloadURL(fileRef);
+      await sendMessage("", imageUrl);
+    } catch (err) {
+      console.error("Image upload failed:", err);
+    } finally {
+      setUploading(false);
+      e.target.value = ""; // reset input
+    }
+  };
 
   if (!profile) return null;
 
@@ -198,14 +227,17 @@ const ChatBox: FC<ChatBoxProps> = ({
               }`}
             >
               {msg.text}
+              {msg.imageUrl && (
+                <img src={msg.imageUrl} alt="sent image" className="mt-2 rounded max-w-full" />
+              )}
             </div>
-            {msg.senderId === auth.currentUser!.uid && (
+            {/* {msg.senderId === auth.currentUser!.uid && (
               <img
                 src={msg.senderAvatar || "/default-avatar.png"}
                 alt={msg.senderName}
                 className="w-8 h-8 rounded-full"
               />
-            )}
+            )} */}
           </div>
         ))}
         <div ref={messagesEndRef} />
@@ -218,11 +250,15 @@ const ChatBox: FC<ChatBoxProps> = ({
           placeholder="Type a message..."
           value={message}
           onChange={(e) => setMessage(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && sendMessage()}
+          onKeyDown={(e) => e.key === "Enter" && sendMessage(message)}
           className="flex-1 border border-gray-300 dark:border-gray-600 rounded-lg p-2 mr-2 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
         />
+        <label className="bg-gray-300 dark:bg-gray-600 hover:bg-gray-400 dark:hover:bg-gray-500 px-3 py-2 rounded cursor-pointer text-sm">
+          {uploading ? "Uploading..." : "📷"}
+          <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
+        </label>
         <button
-          onClick={sendMessage}
+          onClick={() => sendMessage(message)} 
           className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg"
         >
           Send

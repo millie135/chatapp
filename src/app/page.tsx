@@ -108,6 +108,7 @@ export default function Home() {
 
   const handleSelectUser = async (u: any) => {
     setChatUser(u);
+    setUnreadCounts(prev => ({ ...prev, [u.id]: 0 }));
     if (!user) return;
     const snapshot = await getDocs(query(collection(db, "chats", u.id, user.uid), orderBy("timestamp")));
     snapshot.docs.forEach(async (docSnap) => {
@@ -116,7 +117,7 @@ export default function Home() {
         await updateDoc(doc(db, "chats", u.id, user.uid, docSnap.id), { read: true });
       }
     });
-    setUnreadCounts((prev) => ({ ...prev, [u.id]: 0 }));
+    //setUnreadCounts((prev) => ({ ...prev, [u.id]: 0 }));
   };
 
   const handleSignOut = async () => {
@@ -177,6 +178,7 @@ export default function Home() {
               key={chatUser.id}
               chatWithUserId={chatUser.id}
               chatWithUsername={chatUser.username}
+              onReadMessages={() => setUnreadCounts(prev => ({ ...prev, [chatUser.id]: 0 }))}
               //online={chatUser ? userStatuses[chatUser.id] : false}
             />
           ) : (
