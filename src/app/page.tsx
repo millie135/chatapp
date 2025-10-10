@@ -18,89 +18,44 @@ export default function Home() {
   const [userStatuses, setUserStatuses] = useState<{ [key: string]: boolean }>({}); // Track online/offline
 
   // Auth state
-  /*useEffect(() => {
-    const unsubscribe = auth.onAuthStateChanged(async (u) => {
+
+  useEffect(() => {
+    // Listen to auth state
+    const unsubscribe = auth.onAuthStateChanged((u) => {
       setUser(u);
       setLoading(false);
-      if (!u) return;
-
-      const userRef = doc(db, "users", u.uid);
-      const statusRef = ref(rtdb, `/status/${u.uid}`);
-
-      // Update Firestore user info without overwriting username
-       await setDoc(
-        userRef,
-        {
-          email: u.email,
-          avatar: u.photoURL || "",
-          //lastSeen: serverTimestamp(),
-        },
-        { merge: true }
-      );
-
-      // Listen to connection state
-      const connectedRef = ref(rtdb, ".info/connected");
-      const unsubscribeConnected = onValue(connectedRef, async (snap) => {
-        if (snap.val() === true) {
-          // Client is connected
-          await rtdbSet(statusRef, true);
-
-          // Set offline on disconnect and update lastSeen
-          onDisconnect(statusRef)
-            .set(false)
-            .then(() => updateDoc(userRef, { lastSeen: serverTimestamp() }));
-        }
-      });
-      return () => unsubscribeConnected();
-
-      // Mark online
-      // rtdbSet(statusRef, true);
-      
-      // Mark offline on disconnect and update lastSeen
-      // onDisconnect(statusRef)
-      //   .set(false)
-      //   .then(() => {
-      //     updateDoc(userRef, { lastSeen: serverTimestamp() });
-      //   });
     });
     return () => unsubscribe();
-    
-  }, []);*/
+  }, []);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const userRef = doc(db, "users", user.uid);
+    const statusRef = ref(rtdb, `/status/${user.uid}`);
+    const connectedRef = ref(rtdb, ".info/connected");
+
+    // Update Firestore info (async handled safely)
+    //setDoc(userRef, { email: user.email, avatar: user.photoURL || "" }, { merge: true });
+    // Only set avatar if it doesn't exist
+    setDoc(userRef, {
+      email: user.email,
+      avatar: (user.photoURL || `https://avatars.dicebear.com/api/identicon/${user.uid}.svg`)
+    }, { merge: true });
 
 
-useEffect(() => {
-  // Listen to auth state
-  const unsubscribe = auth.onAuthStateChanged((u) => {
-    setUser(u);
-    setLoading(false);
-  });
-  return () => unsubscribe();
-}, []);
+    // Listen to connection state
+    const unsubscribeConnected = onValue(connectedRef, (snap) => {
+      if (snap.val() === true) {
+        rtdbSet(statusRef, true); // mark online
+        onDisconnect(statusRef)
+          .set(false)
+          .then(() => updateDoc(userRef, { lastSeen: serverTimestamp() }));
+      }
+    });
 
-useEffect(() => {
-  if (!user) return;
-
-  const userRef = doc(db, "users", user.uid);
-  const statusRef = ref(rtdb, `/status/${user.uid}`);
-  const connectedRef = ref(rtdb, ".info/connected");
-
-  // Update Firestore info (async handled safely)
-  setDoc(userRef, { email: user.email, avatar: user.photoURL || "" }, { merge: true });
-
-  // Listen to connection state
-  const unsubscribeConnected = onValue(connectedRef, (snap) => {
-    if (snap.val() === true) {
-      rtdbSet(statusRef, true); // mark online
-      onDisconnect(statusRef)
-        .set(false)
-        .then(() => updateDoc(userRef, { lastSeen: serverTimestamp() }));
-    }
-  });
-
-  return () => unsubscribeConnected();
-}, [user]);
-
-
+    return () => unsubscribeConnected();
+  }, [user]);
 
   // Fetch users
   useEffect(() => {
@@ -132,9 +87,6 @@ useEffect(() => {
 
     return () => unsubscribers.forEach((fn) => fn());
   }, [users]);
-
-
-
 
   // Track unread messages
   useEffect(() => {
@@ -174,16 +126,6 @@ useEffect(() => {
     await rtdbSet(statusRef, false); // immediately offline
     await updateDoc(doc(db, "users", user.uid), { lastSeen: serverTimestamp() });
     await auth.signOut();
-
-    // try {
-    //   const statusRef = ref(rtdb, `/status/${user.uid}`);
-    //   // Set offline manually before signing out
-    //   await rtdbSet(statusRef, false);
-
-    //   await auth.signOut();
-    // } catch (error) {
-    //   console.error("Sign out error:", error);
-    // }
   };
 
 
