@@ -1,6 +1,9 @@
 "use client";
 import { FC, useEffect, useState, useRef } from "react";
 import { db, auth } from "@/firebaseConfig";
+import { rtdb } from "@/firebaseConfig"; // make sure rtdb is exported from your config
+import { ref, onValue } from "firebase/database";
+
 import {
   collection,
   addDoc,
@@ -49,7 +52,7 @@ const ChatBox: FC<ChatBoxProps> = ({
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
-  useEffect(() => {
+  /*useEffect(() => {
     const docRef = doc(db, "users", chatWithUserId);
     const unsubscribe = onSnapshot(docRef, (docSnap) => {
       if (docSnap.exists()) {
@@ -57,7 +60,34 @@ const ChatBox: FC<ChatBoxProps> = ({
       }
     });
     return () => unsubscribe();
+  }, [chatWithUserId]);*/
+
+  useEffect(() => {
+    const profileRef = doc(db, "users", chatWithUserId);
+    const statusRef = ref(rtdb, `/status/${chatWithUserId}`);
+
+    // Listen to Firestore for profile info
+    const unsubscribeProfile = onSnapshot(profileRef, (docSnap) => {
+      if (docSnap.exists()) {
+        //setProfile(prev => ({ ...docSnap.data(), online: prev?.online }));
+        const data = docSnap.data() as UserProfile;
+        setProfile(prev => ({ ...data, online: prev?.online }));
+
+      }
+    });
+
+    // Listen to Realtime Database for online/offline
+    const unsubscribeStatus = onValue(statusRef, (snap) => {
+      const isOnline = snap.val() === true;
+      setProfile(prev => prev ? { ...prev, online: isOnline } : { username: "", avatar: "", online: isOnline });
+    });
+
+    return () => {
+      unsubscribeProfile();
+      unsubscribeStatus();
+    };
   }, [chatWithUserId]);
+
 
 
   
