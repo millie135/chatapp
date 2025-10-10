@@ -18,34 +18,89 @@ export default function Home() {
   const [userStatuses, setUserStatuses] = useState<{ [key: string]: boolean }>({}); // Track online/offline
 
   // Auth state
-  useEffect(() => {
+  /*useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged(async (u) => {
       setUser(u);
       setLoading(false);
       if (!u) return;
 
       const userRef = doc(db, "users", u.uid);
-      await setDoc(
+      const statusRef = ref(rtdb, `/status/${u.uid}`);
+
+      // Update Firestore user info without overwriting username
+       await setDoc(
         userRef,
         {
           email: u.email,
-          username: u.displayName || u.email,
           avatar: u.photoURL || "",
-          lastSeen: serverTimestamp(),
-          
+          //lastSeen: serverTimestamp(),
         },
         { merge: true }
       );
 
-      const statusRef = ref(rtdb, `/status/${u.uid}`);
-      await rtdbSet(statusRef, true);
-      //onDisconnect(statusRef).set(false);
-      onDisconnect(statusRef).set(false);
+      // Listen to connection state
+      const connectedRef = ref(rtdb, ".info/connected");
+      const unsubscribeConnected = onValue(connectedRef, async (snap) => {
+        if (snap.val() === true) {
+          // Client is connected
+          await rtdbSet(statusRef, true);
 
+          // Set offline on disconnect and update lastSeen
+          onDisconnect(statusRef)
+            .set(false)
+            .then(() => updateDoc(userRef, { lastSeen: serverTimestamp() }));
+        }
+      });
+      return () => unsubscribeConnected();
 
+      // Mark online
+      // rtdbSet(statusRef, true);
+      
+      // Mark offline on disconnect and update lastSeen
+      // onDisconnect(statusRef)
+      //   .set(false)
+      //   .then(() => {
+      //     updateDoc(userRef, { lastSeen: serverTimestamp() });
+      //   });
     });
     return () => unsubscribe();
-  }, []);
+    
+  }, []);*/
+
+
+useEffect(() => {
+  // Listen to auth state
+  const unsubscribe = auth.onAuthStateChanged((u) => {
+    setUser(u);
+    setLoading(false);
+  });
+  return () => unsubscribe();
+}, []);
+
+useEffect(() => {
+  if (!user) return;
+
+  const userRef = doc(db, "users", user.uid);
+  const statusRef = ref(rtdb, `/status/${user.uid}`);
+  const connectedRef = ref(rtdb, ".info/connected");
+
+  // Update Firestore info (async handled safely)
+  setDoc(userRef, { email: user.email, avatar: user.photoURL || "" }, { merge: true });
+
+  // Listen to connection state
+  const unsubscribeConnected = onValue(connectedRef, (snap) => {
+    if (snap.val() === true) {
+      rtdbSet(statusRef, true); // mark online
+      onDisconnect(statusRef)
+        .set(false)
+        .then(() => updateDoc(userRef, { lastSeen: serverTimestamp() }));
+    }
+  });
+
+  return () => unsubscribeConnected();
+}, [user]);
+
+
 
   // Fetch users
   useEffect(() => {
@@ -113,31 +168,23 @@ export default function Home() {
   };
 
   const handleSignOut = async () => {
-  if (!user) return;
+    if (!user) return;
 
-  const statusRef = ref(rtdb, `/status/${user.uid}`);
-  const userRef = doc(db, "users", user.uid);
-
-  try {
-    // Ensure onDisconnect is set (so closing browser still works)
-    onDisconnect(statusRef).set(false);
-
-    // Set offline immediately
-    await rtdbSet(statusRef, false);
-
-    // Update last seen in Firestore
-    await updateDoc(userRef, { lastSeen: serverTimestamp() });
-
-    // Sign out
+    const statusRef = ref(rtdb, `/status/${user.uid}`);
+    await rtdbSet(statusRef, false); // immediately offline
+    await updateDoc(doc(db, "users", user.uid), { lastSeen: serverTimestamp() });
     await auth.signOut();
 
-    // Clear local state
-    setUser(null);
-  } catch (error) {
-    console.error("Sign out error:", error);
-  }
-};
+    // try {
+    //   const statusRef = ref(rtdb, `/status/${user.uid}`);
+    //   // Set offline manually before signing out
+    //   await rtdbSet(statusRef, false);
 
+    //   await auth.signOut();
+    // } catch (error) {
+    //   console.error("Sign out error:", error);
+    // }
+  };
 
 
   if (loading)
@@ -152,9 +199,6 @@ export default function Home() {
       <div className="flex flex-col md:flex-row min-h-screen bg-gray-50 dark:bg-gray-900">
         <div className="w-full md:w-1/4 p-4 bg-white dark:bg-gray-800 shadow-md rounded-md">
           <h2 className="text-xl font-bold mb-4 text-gray-800 dark:text-gray-100">Welcome, {user.email}</h2>
-          {/* <button className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition mb-4" onClick={() => auth.signOut()}>
-            Sign Out
-          </button> */}
           <button
             className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition mb-4"
             onClick={handleSignOut}
@@ -170,7 +214,6 @@ export default function Home() {
                 }`}
                 onClick={() => handleSelectUser(u)}
               >
-                {/* {u.username} */}
                 <div className="flex justify-between items-center">
                   <span>{u.username}</span>
                   <span className={`text-xs font-medium ${userStatuses[u.id] ? "text-green-500" : "text-gray-400"}`}>
@@ -187,13 +230,12 @@ export default function Home() {
           </div>
         </div>
         <div className="flex-1 p-4">
-          {/* {chatUser ? <ChatBox key={chatUser.id} chatWithUserId={chatUser.id} chatWithUsername={chatUser.username} /> : <p className="text-gray-500 dark:text-gray-400">Select a user to start chatting</p>} */}
           {chatUser ? (
             <ChatBox
               key={chatUser.id}
               chatWithUserId={chatUser.id}
               chatWithUsername={chatUser.username}
-              online={chatUser ? userStatuses[chatUser.id] : false}
+              //online={chatUser ? userStatuses[chatUser.id] : false}
             />
           ) : (
             <p className="text-gray-500 dark:text-gray-400">Select a user to start chatting</p>
