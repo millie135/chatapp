@@ -116,31 +116,29 @@ const ChatBox: FC<ChatBoxProps> = ({
   }, [chatWithUserId]);
 
   useEffect(() => {
-    /*if (!auth.currentUser) return;
-    const messagesRef = collection(
-      db,
-      "chats",
-      auth.currentUser.uid,
-      chatWithUserId
-    );*/
-
     if (!auth.currentUser) return;
 
-    let viewerId = auth.currentUser.uid;
-    let targetId = chatWithUserId;
+    //const viewerId = isManager && managerViewUserId ? managerViewUserId : auth.currentUser.uid;
+    const viewerId = isManager && currentUserId ? currentUserId : auth.currentUser.uid;
+    const targetId = chatWithUserId;
 
     // If manager is viewing someone else's chat, use their ids
-    if (isManager && managerViewUserId && currentUserId) {
-      viewerId = managerViewUserId; // e.g. userA
-      targetId = chatWithUserId;    // e.g. userB
-    }
+    // if (isManager && managerViewUserId && currentUserId) {
+    //   viewerId = managerViewUserId; // e.g. userA
+    //   targetId = chatWithUserId;    // e.g. userB
+    // }
 
-    const messagesRef = collection(db, "chats", viewerId, targetId);
-    const q = query(messagesRef, orderBy("timestamp"));
-    // const q = query(messagesRef, orderBy("timestamp"));
-    const unsubscribe = onSnapshot(q, async (snapshot) => {
-      //const msgs = snapshot.docs.map((doc) => ({ id: doc.id, ...(doc.data() as any) }));
-      //const msgs = snapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as Message) }));
+    //const messagesRef = collection(db, "chats", viewerId, targetId);
+    //const q = query(messagesRef, orderBy("timestamp"));
+
+    const ref1 = collection(db, "chats", viewerId, targetId);
+    const ref2 = collection(db, "chats", targetId, viewerId);
+
+    const q1 = query(ref1, orderBy("timestamp"));
+    const q2 = query(ref2, orderBy("timestamp"));
+
+    /*const unsubscribe1 = onSnapshot(q1, async (snapshot) => {
+      
       const msgs: Message[] = snapshot.docs.map(doc => {
         const data = doc.data();
         return {
@@ -159,25 +157,41 @@ const ChatBox: FC<ChatBoxProps> = ({
       setMessages(msgs);
 
       // Mark unread messages as read
-      //const batchUpdates: Promise<any>[] = [];
       const batch: Promise<any>[] = [];
+
       msgs.forEach((msg) => {
-        if (!msg.read && msg.senderId !== auth.currentUser!.uid) {
-          const msgRef = doc(db, "chats", auth.currentUser!.uid, chatWithUserId, msg.id);
-         batch.push(updateDoc(msgRef, { read: true }));
+        if (!msg.read && msg.senderId !== viewerId) {
+          const msgRef = doc(db, "chats", viewerId, targetId, msg.id);
+          batch.push(updateDoc(msgRef, { read: true }));
         }
       });
 
       //if (batchUpdates.length > 0) await Promise.all(batchUpdates);
       if (batch.length > 0) {
         await Promise.all(batch);
-
-        // <-- call the callback to notify Home
         if (onReadMessages) onReadMessages();
       }
+    });*/
+    const unsubscribe1 = onSnapshot(q1, (snapshot) => {
+      const msgs = snapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as Message) }));
+      setMessages(prev => {
+        const others = prev.filter(m => m.senderId !== targetId && m.to !== targetId);
+        return [...others, ...msgs].sort((a, b) => a.timestamp?.seconds - b.timestamp?.seconds);
+      });
     });
-    return () => unsubscribe();
-  }, [chatWithUserId, onReadMessages]);
+
+    const unsubscribe2 = onSnapshot(q2, (snapshot) => {
+      const msgs = snapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as Message) }));
+      setMessages(prev => {
+        const others = prev.filter(m => m.senderId !== viewerId && m.to !== viewerId);
+        return [...others, ...msgs].sort((a, b) => a.timestamp?.seconds - b.timestamp?.seconds);
+      });
+    });
+    return () => {
+      unsubscribe1();
+      unsubscribe2();
+    };
+  }, [chatWithUserId, isManager, currentUserId]);
 
   useEffect(scrollToBottom, [messages]);
 
@@ -214,6 +228,8 @@ const ChatBox: FC<ChatBoxProps> = ({
       // const senderRef = doc(db, "chats", senderId, "messages", messageId);
       // const receiverRef = doc(db, "chats", chatWithUserId, "messages", messageId);
 
+    const senderRef = doc(db, "chats", senderId, receiverId, messageId);
+    const receiverRef = doc(db, "chats", receiverId, senderId, messageId);  
 
     try {
       // await Promise.all([
@@ -222,13 +238,15 @@ const ChatBox: FC<ChatBoxProps> = ({
       // ]);
       // setMessage("");
       // Write only to your own collection
-      const senderRef = doc(db, "chats", senderId, receiverId, messageId);
+      /*const senderRef = doc(db, "chats", senderId, receiverId, messageId);
       const receiverRef = doc(db, "chats", receiverId, senderId, messageId);
       // Save for both sender and receiver
       await Promise.all([
         setDoc(senderRef, messageData),
         setDoc(receiverRef, messageData),
       ]);
+      setMessage("");*/
+      await Promise.all([setDoc(senderRef, messageData), setDoc(receiverRef, messageData)]);
       setMessage("");
     } catch (err) {
       console.error("Error sending message:", err);
@@ -237,7 +255,8 @@ const ChatBox: FC<ChatBoxProps> = ({
 
   // Handle image upload
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files || e.target.files.length === 0) return;
+    //if (!e.target.files || e.target.files.length === 0) return;
+    if (!e.target.files?.length) return;
 
     const file = e.target.files[0];
     const fileRef = storageRef(storage, `chatImages/${auth.currentUser!.uid}-${Date.now()}-${file.name}`);
@@ -308,7 +327,7 @@ const ChatBox: FC<ChatBoxProps> = ({
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-2">
+      {/* <div className="flex-1 overflow-y-auto p-4 space-y-2">
         {messages.map((msg) => (
           <div
             key={msg.id}
@@ -338,7 +357,7 @@ const ChatBox: FC<ChatBoxProps> = ({
                 )}
               </div>
 
-              {/* Hover reactions bar */}
+              
               <div className={`absolute hidden group-hover:flex space-x-1 bg-white dark:bg-gray-800 border rounded-full p-1 shadow-md z-50 -top-8 ${
                 msg.senderId === auth.currentUser!.uid
                   ? "right-0" // align to right for sender
@@ -355,7 +374,7 @@ const ChatBox: FC<ChatBoxProps> = ({
                 ))}
               </div>
 
-              {/* Show current reactions */}
+              
               {msg.reactions && Object.keys(msg.reactions).length > 0 && (
                 <div className="flex mt-1 space-x-1">
                   {Object.values(msg.reactions).map((emoji, index) => (
@@ -366,33 +385,41 @@ const ChatBox: FC<ChatBoxProps> = ({
                 </div>
               )}
             </div>
+          </div>
+        ))}
+        <div ref={messagesEndRef} />
+      </div> */}
 
-            {/* <div
-              className={`px-4 py-2 rounded-lg max-w-xs break-words ${
-                msg.senderId === auth.currentUser!.uid
-                  ? "bg-blue-500 text-white"
-                  : "bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-              }`}
-            >
-              {msg.text}
-              {msg.imageUrl && (
-                <img src={msg.imageUrl} alt="sent image" className="mt-2 rounded max-w-full" />
+      <div className="flex-1 overflow-y-auto p-4 space-y-2">
+        {messages.map(msg => (
+          <div key={msg.id} className={`flex items-end space-x-2 ${msg.senderId === auth.currentUser!.uid ? "justify-end" : "justify-start"}`}>
+            {msg.senderId !== auth.currentUser!.uid && (
+              <img src={msg.senderAvatar || profile.avatar || "/default-avatar.png"} alt={msg.senderName} className="w-8 h-8 rounded-full mr-2" />
+            )}
+            <div className="relative group">
+              <div className={`px-4 py-2 rounded-lg max-w-xs break-words ${msg.senderId === auth.currentUser!.uid ? "bg-blue-500 text-white" : "bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100"}`}>
+                {msg.text}
+                {msg.imageUrl && <img src={msg.imageUrl} alt="sent image" className="mt-2 rounded max-w-full" />}
+              </div>
+
+              {/* Reactions */}
+              <div className={`absolute hidden group-hover:flex space-x-1 bg-white dark:bg-gray-800 border rounded-full p-1 shadow-md z-50 -top-8 ${msg.senderId === auth.currentUser!.uid ? "right-0" : "left-0"}`}>
+                {["👍", "❤️", "😂", "😮", "😢", "🔥"].map(emoji => (
+                  <button key={emoji} className="hover:scale-125 transition-transform" onClick={() => handleAddReaction(msg.id, emoji)}>{emoji}</button>
+                ))}
+              </div>
+
+              {msg.reactions && Object.keys(msg.reactions).length > 0 && (
+                <div className="flex mt-1 space-x-1">{Object.values(msg.reactions).map((emoji, idx) => <span key={idx} className="text-sm">{emoji}</span>)}</div>
               )}
-            </div> */}
-            {/* {msg.senderId === auth.currentUser!.uid && (
-              <img
-                src={msg.senderAvatar || "/default-avatar.png"}
-                alt={msg.senderName}
-                className="w-8 h-8 rounded-full"
-              />
-            )} */}
+            </div>
           </div>
         ))}
         <div ref={messagesEndRef} />
       </div>
 
       {/* Input */}
-      <div className="relative w-full">
+      {/* <div className="relative w-full">
         <div className="flex items-center border-t border-gray-200 dark:border-gray-700 p-3">
           <button
             onClick={() => setShowEmojiPicker(!showEmojiPicker)}
@@ -425,6 +452,18 @@ const ChatBox: FC<ChatBoxProps> = ({
             <EmojiPicker onEmojiClick={handleEmojiClick} />
           </div>
         )}
+      </div> */}
+      <div className="relative w-full">
+        <div className="flex items-center border-t border-gray-200 dark:border-gray-700 p-3">
+          <button onClick={() => setShowEmojiPicker(!showEmojiPicker)} className="mr-2 text-2xl">😊</button>
+          <input type="text" placeholder="Type a message..." value={message} onChange={e => setMessage(replaceEmojiShortcuts(e.target.value))} onKeyDown={e => e.key === "Enter" && sendMessage(message)} className="flex-1 border border-gray-300 dark:border-gray-600 rounded-lg p-2 mr-2 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white" />
+          <label className="bg-gray-300 dark:bg-gray-600 hover:bg-gray-400 dark:hover:bg-gray-500 px-3 py-2 rounded cursor-pointer text-sm">
+            {uploading ? "Uploading..." : "📷"}
+            <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
+          </label>
+          <button onClick={() => sendMessage(message)} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg">Send</button>
+        </div>
+        {showEmojiPicker && <div className="absolute bottom-16 left-4 z-50"><EmojiPicker onEmojiClick={handleEmojiClick} /></div>}
       </div>
     </div>
   );

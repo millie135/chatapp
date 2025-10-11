@@ -211,7 +211,7 @@ export default function Home() {
               onReadMessages={() => setUnreadCounts(prev => ({ ...prev, [chatUser.id]: 0 }))}
               //online={chatUser ? userStatuses[chatUser.id] : false}
             />*/
-            <ChatBox
+            /*<ChatBox
               key={chatUser.id}
               chatWithUserId={chatUser.id}             // target user
               chatWithUsername={chatUser.username}
@@ -219,7 +219,17 @@ export default function Home() {
               isManager={user.role === "manager"}
               currentUserId={user.uid}                 // manager's own uid
               managerViewUserId={chatUser.id}          // the user being viewed
+            />*/
+            <ChatBox
+              key={chatUser.id}
+              chatWithUserId={chatUser.id}             // the target user
+              chatWithUsername={chatUser.username}
+              onReadMessages={() => setUnreadCounts(prev => ({ ...prev, [chatUser.id]: 0 }))}
+              isManager={user.role === "manager"}
+              currentUserId={chatUser.id}              // selected user (manager "acting as")
+              managerViewUserId={user.uid}             // manager's own UID
             />
+
 
           ) : (
             <p className="text-gray-500 dark:text-gray-400">Select a user to start chatting</p>
