@@ -18,7 +18,6 @@ export default function Home() {
   const [userStatuses, setUserStatuses] = useState<{ [key: string]: boolean }>({}); // Track online/offline
 
   // Auth state
-
   useEffect(() => {
     // Listen to auth state
     const unsubscribe = auth.onAuthStateChanged((u) => {
@@ -72,7 +71,6 @@ export default function Home() {
  // --- Listen to all users' online statuses ---
   useEffect(() => {
     if (!users.length) return;
-
     const unsubscribers: (() => void)[] = [];
 
     users.forEach((u) => {

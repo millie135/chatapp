@@ -5,6 +5,7 @@ import { rtdb } from "@/firebaseConfig"; // make sure rtdb is exported from your
 import { ref as rtdbRef, onValue } from "firebase/database";
 import { storage } from "@/firebaseConfig";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
+import EmojiPicker from "emoji-picker-react";
 
 import {
   collection,
@@ -16,6 +17,7 @@ import {
   doc,
   getDoc,
   updateDoc,
+  setDoc
 } from "firebase/firestore";
 
 interface ChatBoxProps {
@@ -33,6 +35,9 @@ interface Message {
   senderAvatar?: string;
   timestamp: any;
   imageUrl?: string;
+  reactions?: Record<string, string>;
+  to: string;
+  read: boolean;
 }
 
 interface UserProfile {
@@ -40,6 +45,21 @@ interface UserProfile {
   avatar: string;
   online?: boolean;
 }
+
+const emojiShortcuts: Record<string, string> = {
+  ":)": "😊",
+  ":-)": "😊",
+  ":D": "😄",
+  ":-D": "😄",
+  ":(": "☹️",
+  ":-(": "☹️",
+  ";)": "😉",
+  ";-)": "😉",
+  ":P": "😋",
+  ":'(": "😢",
+  "<3": "❤️",
+};
+
 
 const ChatBox: FC<ChatBoxProps> = ({
   chatWithUserId,
@@ -52,21 +72,15 @@ const ChatBox: FC<ChatBoxProps> = ({
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [uploading, setUploading] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  // const messageId = doc(collection(db, "chats")).id; // generate unique ID
+  // const senderRef = doc(db, "chats", senderId, chatWithUserId, messageId);
+  // const receiverRef = doc(db, "chats", chatWithUserId, senderId, messageId);
 
   // Scroll to bottom whenever messages update
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
-
-  /*useEffect(() => {
-    const docRef = doc(db, "users", chatWithUserId);
-    const unsubscribe = onSnapshot(docRef, (docSnap) => {
-      if (docSnap.exists()) {
-        setProfile(docSnap.data() as UserProfile);
-      }
-    });
-    return () => unsubscribe();
-  }, [chatWithUserId]);*/
 
   useEffect(() => {
     const profileRef = doc(db, "users", chatWithUserId);
@@ -96,29 +110,47 @@ const ChatBox: FC<ChatBoxProps> = ({
   }, [chatWithUserId]);
 
   useEffect(() => {
+    if (!auth.currentUser) return;
     const messagesRef = collection(
       db,
       "chats",
-      auth.currentUser!.uid,
+      auth.currentUser.uid,
       chatWithUserId
     );
     const q = query(messagesRef, orderBy("timestamp"));
     const unsubscribe = onSnapshot(q, async (snapshot) => {
-      const msgs = snapshot.docs.map((doc) => ({ id: doc.id, ...(doc.data() as any) }));
+      //const msgs = snapshot.docs.map((doc) => ({ id: doc.id, ...(doc.data() as any) }));
+      //const msgs = snapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as Message) }));
+      const msgs: Message[] = snapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          text: data.text || "",
+          senderId: data.senderId || "",
+          senderName: data.senderName || "",
+          senderAvatar: data.senderAvatar || "",
+          timestamp: data.timestamp || null,
+          imageUrl: data.imageUrl || null,
+          reactions: data.reactions || {},
+          to: data.to || "",
+          read: data.read ?? false,
+        };
+      });
       setMessages(msgs);
 
       // Mark unread messages as read
-      const batchUpdates: Promise<any>[] = [];
+      //const batchUpdates: Promise<any>[] = [];
+      const batch: Promise<any>[] = [];
       msgs.forEach((msg) => {
         if (!msg.read && msg.senderId !== auth.currentUser!.uid) {
           const msgRef = doc(db, "chats", auth.currentUser!.uid, chatWithUserId, msg.id);
-          batchUpdates.push(updateDoc(msgRef, { read: true }));
+         batch.push(updateDoc(msgRef, { read: true }));
         }
       });
 
       //if (batchUpdates.length > 0) await Promise.all(batchUpdates);
-      if (batchUpdates.length > 0) {
-        await Promise.all(batchUpdates);
+      if (batch.length > 0) {
+        await Promise.all(batch);
 
         // <-- call the callback to notify Home
         if (onReadMessages) onReadMessages();
@@ -131,31 +163,51 @@ const ChatBox: FC<ChatBoxProps> = ({
 
   const sendMessage = async (text?: string, imageUrl?: string) => {
     if (!text?.trim() && !imageUrl) return;
+    if (!auth.currentUser) return;
 
     const senderId = auth.currentUser!.uid;
-    const senderName = auth.currentUser!.displayName || auth.currentUser!.email;
+    const receiverId = chatWithUserId;
+    const senderName = auth.currentUser.displayName || auth.currentUser.email;
     const senderAvatar = auth.currentUser!.photoURL || "https://api.dicebear.com/9.x/lorelei/svg";
 
+    const messageId = doc(collection(db, "chats", senderId, receiverId)).id; // generate unique ID
     
     const messageData = {
+      id: messageId,
       text: text || "",
       senderId,
       senderName,
       senderAvatar, 
       timestamp: serverTimestamp(),
       imageUrl: imageUrl || null,
+      reactions: {},
+      read: false,
+      to: receiverId // optional: track recipient
     };
 
     // Sender's path
-    const senderRef = collection(db, "chats", senderId, chatWithUserId);
+    //const senderRef = collection(db, "chats", senderId, chatWithUserId);
     // Receiver's path
-    const receiverRef = collection(db, "chats", chatWithUserId, senderId);
+    //const receiverRef = collection(db, "chats", chatWithUserId, senderId);
+
+     // Sender and Receiver paths
+      // const senderRef = doc(db, "chats", senderId, "messages", messageId);
+      // const receiverRef = doc(db, "chats", chatWithUserId, "messages", messageId);
 
 
     try {
+      // await Promise.all([
+      //   setDoc(senderRef, messageData),
+      //   setDoc(receiverRef, messageData),
+      // ]);
+      // setMessage("");
+      // Write only to your own collection
+      const senderRef = doc(db, "chats", senderId, receiverId, messageId);
+      const receiverRef = doc(db, "chats", receiverId, senderId, messageId);
+      // Save for both sender and receiver
       await Promise.all([
-        addDoc(senderRef, messageData),
-        addDoc(receiverRef, messageData),
+        setDoc(senderRef, messageData),
+        setDoc(receiverRef, messageData),
       ]);
       setMessage("");
     } catch (err) {
@@ -180,6 +232,38 @@ const ChatBox: FC<ChatBoxProps> = ({
     } finally {
       setUploading(false);
       e.target.value = ""; // reset input
+    }
+  };
+
+  const handleEmojiClick = (emojiData: any) => {
+    setMessage((prev) => prev + emojiData.emoji);
+    setShowEmojiPicker(false);
+  };
+
+  const replaceEmojiShortcuts = (text: string) => {
+    let replaced = text;
+    Object.entries(emojiShortcuts).forEach(([shortcut, emoji]) => {
+      const regex = new RegExp(shortcut.replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&"), "g");
+      replaced = replaced.replace(regex, emoji);
+    });
+    return replaced;
+  };
+
+  const handleAddReaction = async (messageId: string, emoji: string) => {
+    if (!auth.currentUser) return;
+    const senderId = auth.currentUser.uid;
+
+    const messageRef = doc(db, "chats", senderId, chatWithUserId, messageId);
+    const receiverRef = doc(db, "chats", chatWithUserId, senderId, messageId);
+
+    try {
+      // Add the reaction for this user
+      await Promise.all([
+        updateDoc(messageRef, { [`reactions.${senderId}`]: emoji }),
+        updateDoc(receiverRef, { [`reactions.${senderId}`]: emoji }),
+      ]);
+    } catch (err) {
+      console.error("Error adding reaction:", err);
     }
   };
 
@@ -219,7 +303,47 @@ const ChatBox: FC<ChatBoxProps> = ({
                 className="w-8 h-8 rounded-full mr-2"
               />
             )}
-            <div
+
+            <div className="relative group">
+              <div
+                className={`px-4 py-2 rounded-lg max-w-xs break-words ${
+                  msg.senderId === auth.currentUser!.uid
+                    ? "bg-blue-500 text-white"
+                    : "bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                }`}
+              >
+                {msg.text}
+                {msg.imageUrl && (
+                  <img src={msg.imageUrl} alt="sent image" className="mt-2 rounded max-w-full" />
+                )}
+              </div>
+
+              {/* Hover reactions bar */}
+              <div className="absolute hidden group-hover:flex space-x-1 bg-white dark:bg-gray-800 border rounded-full p-1 shadow-md -top-8 left-0 z-50">
+                {["👍", "❤️", "😂", "😮", "😢", "🔥"].map((emoji) => (
+                  <button
+                    key={emoji}
+                    className="hover:scale-125 transition-transform"
+                    onClick={() => handleAddReaction(msg.id, emoji)}
+                  >
+                    {emoji}
+                  </button>
+                ))}
+              </div>
+
+              {/* Show current reactions */}
+              {msg.reactions && Object.keys(msg.reactions).length > 0 && (
+                <div className="flex mt-1 space-x-1">
+                  {Object.values(msg.reactions).map((emoji, index) => (
+                    <span key={index} className="text-sm">
+                      {emoji}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* <div
               className={`px-4 py-2 rounded-lg max-w-xs break-words ${
                 msg.senderId === auth.currentUser!.uid
                   ? "bg-blue-500 text-white"
@@ -230,7 +354,7 @@ const ChatBox: FC<ChatBoxProps> = ({
               {msg.imageUrl && (
                 <img src={msg.imageUrl} alt="sent image" className="mt-2 rounded max-w-full" />
               )}
-            </div>
+            </div> */}
             {/* {msg.senderId === auth.currentUser!.uid && (
               <img
                 src={msg.senderAvatar || "/default-avatar.png"}
@@ -244,12 +368,24 @@ const ChatBox: FC<ChatBoxProps> = ({
       </div>
 
       {/* Input */}
-      <div className="flex items-center border-t border-gray-200 dark:border-gray-700 p-3">
+      <div className="relative flex items-center border-t border-gray-200 dark:border-gray-700 p-3">
+        <button
+          onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+          className="mr-2 text-2xl"
+        >
+          😊
+        </button>
+
+        {showEmojiPicker && (
+          <div className="absolute bottom-16 left-4 z-50">
+            <EmojiPicker onEmojiClick={handleEmojiClick} />
+          </div>
+        )}
         <input
           type="text"
           placeholder="Type a message..."
           value={message}
-          onChange={(e) => setMessage(e.target.value)}
+          onChange={(e) => setMessage(replaceEmojiShortcuts(e.target.value))}
           onKeyDown={(e) => e.key === "Enter" && sendMessage(message)}
           className="flex-1 border border-gray-300 dark:border-gray-600 rounded-lg p-2 mr-2 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
         />
