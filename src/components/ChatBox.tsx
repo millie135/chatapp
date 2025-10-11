@@ -319,7 +319,11 @@ const ChatBox: FC<ChatBoxProps> = ({
               </div>
 
               {/* Hover reactions bar */}
-              <div className="absolute hidden group-hover:flex space-x-1 bg-white dark:bg-gray-800 border rounded-full p-1 shadow-md -top-8 left-0 z-50">
+              <div className={`absolute hidden group-hover:flex space-x-1 bg-white dark:bg-gray-800 border rounded-full p-1 shadow-md z-50 -top-8 ${
+                msg.senderId === auth.currentUser!.uid
+                  ? "right-0" // align to right for sender
+                  : "left-0"  // align to left for receiver
+              }`}>
                 {["👍", "❤️", "😂", "😮", "😢", "🔥"].map((emoji) => (
                   <button
                     key={emoji}
@@ -368,37 +372,39 @@ const ChatBox: FC<ChatBoxProps> = ({
       </div>
 
       {/* Input */}
-      <div className="relative flex items-center border-t border-gray-200 dark:border-gray-700 p-3">
-        <button
-          onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-          className="mr-2 text-2xl"
-        >
-          😊
-        </button>
-
+      <div className="relative w-full">
+        <div className="flex items-center border-t border-gray-200 dark:border-gray-700 p-3">
+          <button
+            onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+            className="mr-2 text-2xl"
+          >
+            😊
+          </button>
+          <input
+            // ref={inputRef}
+            type="text"
+            placeholder="Type a message..."
+            value={message}
+            onChange={(e) => setMessage(replaceEmojiShortcuts(e.target.value))}
+            onKeyDown={(e) => e.key === "Enter" && sendMessage(message)}
+            className="flex-1 border border-gray-300 dark:border-gray-600 rounded-lg p-2 mr-2 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+          />
+          <label className="bg-gray-300 dark:bg-gray-600 hover:bg-gray-400 dark:hover:bg-gray-500 px-3 py-2 rounded cursor-pointer text-sm">
+            {uploading ? "Uploading..." : "📷"}
+            <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
+          </label>
+          <button
+            onClick={() => sendMessage(message)} 
+            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg"
+          >
+            Send
+          </button>
+        </div>
         {showEmojiPicker && (
           <div className="absolute bottom-16 left-4 z-50">
             <EmojiPicker onEmojiClick={handleEmojiClick} />
           </div>
         )}
-        <input
-          type="text"
-          placeholder="Type a message..."
-          value={message}
-          onChange={(e) => setMessage(replaceEmojiShortcuts(e.target.value))}
-          onKeyDown={(e) => e.key === "Enter" && sendMessage(message)}
-          className="flex-1 border border-gray-300 dark:border-gray-600 rounded-lg p-2 mr-2 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
-        />
-        <label className="bg-gray-300 dark:bg-gray-600 hover:bg-gray-400 dark:hover:bg-gray-500 px-3 py-2 rounded cursor-pointer text-sm">
-          {uploading ? "Uploading..." : "📷"}
-          <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
-        </label>
-        <button
-          onClick={() => sendMessage(message)} 
-          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg"
-        >
-          Send
-        </button>
       </div>
     </div>
   );
