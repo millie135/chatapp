@@ -5,7 +5,7 @@ import SignUp from "@/components/SignUp";
 import SignIn from "@/components/SignIn";
 import ChatBox from "@/components/ChatBox";
 import { auth, db, rtdb } from "@/firebaseConfig";
-import { collection, onSnapshot, query, orderBy, getDocs, updateDoc, doc, setDoc, serverTimestamp } from "firebase/firestore";
+import { collection, onSnapshot, query, orderBy, getDocs, updateDoc, doc, setDoc, getDoc, serverTimestamp } from "firebase/firestore";
 import { ref, set as rtdbSet, onDisconnect, onValue } from "firebase/database";
 
 export default function Home() {
@@ -18,14 +18,31 @@ export default function Home() {
   const [userStatuses, setUserStatuses] = useState<{ [key: string]: boolean }>({}); // Track online/offline
 
   // Auth state
-  useEffect(() => {
+  /*useEffect(() => {
     // Listen to auth state
     const unsubscribe = auth.onAuthStateChanged((u) => {
       setUser(u);
       setLoading(false);
     });
     return () => unsubscribe();
+  }, []);*/
+
+  useEffect(() => {
+    const unsubscribe = auth.onAuthStateChanged(async (u) => {
+      if (u) {
+        // Fetch role
+        const userRef = doc(db, "users", u.uid);
+        const userSnap = await getDoc(userRef);
+        const userData = userSnap.data();
+        setUser({ ...u, role: userData?.role || "user", username: userData?.username });
+      } else {
+        setUser(null);
+      }
+      setLoading(false);
+    });
+    return () => unsubscribe();
   }, []);
+
 
   useEffect(() => {
     if (!user) return;
@@ -57,12 +74,23 @@ export default function Home() {
   }, [user]);
 
   // Fetch users
-  useEffect(() => {
+  /*useEffect(() => {
     if (!user) return;
     const unsubscribe = onSnapshot(collection(db, "users"), (snapshot) => {
       const allUsers = snapshot.docs
         .filter((doc) => doc.id !== user.uid)
         .map((doc) => ({ id: doc.id, ...doc.data() }));
+      setUsers(allUsers);
+    });
+    return () => unsubscribe();
+  }, [user]);*/
+  useEffect(() => {
+    if (!user) return;
+    const unsubscribe = onSnapshot(collection(db, "users"), (snapshot) => {
+      let allUsers = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+      if (user.role !== "manager") {
+        allUsers = allUsers.filter((u) => u.id !== user.uid);
+      }
       setUsers(allUsers);
     });
     return () => unsubscribe();
@@ -139,13 +167,17 @@ export default function Home() {
     return (
       <div className="flex flex-col md:flex-row min-h-screen bg-gray-50 dark:bg-gray-900">
         <div className="w-full md:w-1/4 p-4 bg-white dark:bg-gray-800 shadow-md rounded-md">
-          <h2 className="text-xl font-bold mb-4 text-gray-800 dark:text-gray-100">Welcome, {user.email}</h2>
+          <h2 className="text-xl font-bold mb-4 text-gray-800 dark:text-gray-100">Welcome, {user.email}{" "}
+            <span className="text-sm text-gray-500">({user.role})</span>
+          </h2>
           <button
             className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition mb-4"
             onClick={handleSignOut}
           >
             Sign Out
           </button>
+
+          {/* Only show all users for manager */}
           <div className="space-y-2">
             {users.map((u) => (
               <button
@@ -172,13 +204,23 @@ export default function Home() {
         </div>
         <div className="flex-1 p-4">
           {chatUser ? (
-            <ChatBox
+            /*<ChatBox
               key={chatUser.id}
               chatWithUserId={chatUser.id}
               chatWithUsername={chatUser.username}
               onReadMessages={() => setUnreadCounts(prev => ({ ...prev, [chatUser.id]: 0 }))}
               //online={chatUser ? userStatuses[chatUser.id] : false}
+            />*/
+            <ChatBox
+              key={chatUser.id}
+              chatWithUserId={chatUser.id}             // target user
+              chatWithUsername={chatUser.username}
+              onReadMessages={() => setUnreadCounts(prev => ({ ...prev, [chatUser.id]: 0 }))}
+              isManager={user.role === "manager"}
+              currentUserId={user.uid}                 // manager's own uid
+              managerViewUserId={chatUser.id}          // the user being viewed
             />
+
           ) : (
             <p className="text-gray-500 dark:text-gray-400">Select a user to start chatting</p>
           )}

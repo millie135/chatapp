@@ -20,12 +20,15 @@ export default function SignUp() {
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
+      //const uid = userCredential.user.uid;
 
       // Save additional info in Firestore
       await setDoc(doc(db, "users", user.uid), {
         username: username,
         email,
-        avatar,
+        role: "user", // default role
+        avatar: `https://avatars.dicebear.com/api/identicon/${user.uid}.svg`,
+        createdAt: new Date()
       });
 
       setSuccess("Account created successfully!");

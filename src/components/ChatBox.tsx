@@ -25,6 +25,9 @@ interface ChatBoxProps {
   chatWithUsername: string;
   chatWithAvatar?: string;
   onReadMessages?: () => void;
+  isManager?: boolean;
+  currentUserId?: string;
+  managerViewUserId?: string; 
 }
 
 interface Message {
@@ -65,7 +68,10 @@ const ChatBox: FC<ChatBoxProps> = ({
   chatWithUserId,
   chatWithUsername,
   chatWithAvatar,
-  onReadMessages
+  onReadMessages,
+  isManager = false,
+  currentUserId,
+  managerViewUserId,
 }) => {
   const [message, setMessage] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
@@ -110,14 +116,28 @@ const ChatBox: FC<ChatBoxProps> = ({
   }, [chatWithUserId]);
 
   useEffect(() => {
-    if (!auth.currentUser) return;
+    /*if (!auth.currentUser) return;
     const messagesRef = collection(
       db,
       "chats",
       auth.currentUser.uid,
       chatWithUserId
-    );
+    );*/
+
+    if (!auth.currentUser) return;
+
+    let viewerId = auth.currentUser.uid;
+    let targetId = chatWithUserId;
+
+    // If manager is viewing someone else's chat, use their ids
+    if (isManager && managerViewUserId && currentUserId) {
+      viewerId = managerViewUserId; // e.g. userA
+      targetId = chatWithUserId;    // e.g. userB
+    }
+
+    const messagesRef = collection(db, "chats", viewerId, targetId);
     const q = query(messagesRef, orderBy("timestamp"));
+    // const q = query(messagesRef, orderBy("timestamp"));
     const unsubscribe = onSnapshot(q, async (snapshot) => {
       //const msgs = snapshot.docs.map((doc) => ({ id: doc.id, ...(doc.data() as any) }));
       //const msgs = snapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as Message) }));
