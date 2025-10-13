@@ -25,3 +25,22 @@ const UserCard: FC<UserCardProps> = ({ userId, username, avatar, onClick }) => {
 };
 
 export default UserCard;
+
+
+/*rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    match /chats/{userId}/{otherUserId}/{messageId} {
+      allow read, write: if request.auth != null &&
+                          (request.auth.uid == userId || request.auth.uid == otherUserId);
+    }
+
+    match /users/{userId} {
+      allow read: if request.auth != null;
+      allow update: if request.auth.uid == userId;
+      allow write: if false;
+    }
+  }
+}*/
+
