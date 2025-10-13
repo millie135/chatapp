@@ -19,7 +19,7 @@ interface Message {
   senderName: string;
   senderAvatar?: string;
   timestamp: any;
-  imageUrl?: string | null;
+   imageUrl: string | null;
   reactions?: Record<string, string>;
   to: string;
   read: boolean;
@@ -38,6 +38,8 @@ const ChatBox: FC<ChatBoxProps> = ({ chatWithUserId, chatWithUsername, currentUs
   const [uploading, setUploading] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [selectedMessage, setSelectedMessage] = useState<string | null>(null);
+
 
   // Scroll to bottom
   const scrollToBottom = () => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -116,12 +118,11 @@ const ChatBox: FC<ChatBoxProps> = ({ chatWithUserId, chatWithUsername, currentUs
       senderName,
       senderAvatar,
       timestamp: serverTimestamp(),
-      imageUrl: imageUrl ?? null, // use null if undefined
+      imageUrl: imageUrl ?? null,
       reactions: {},
       read: false,
-      to: receiverId, // add recipient
+      to: receiverId,
     };
-
 
     try {
       await Promise.all([
@@ -133,6 +134,32 @@ const ChatBox: FC<ChatBoxProps> = ({ chatWithUserId, chatWithUsername, currentUs
       console.error("Error sending message:", err);
     }
   };
+
+  const toggleReaction = async (msg: Message, emoji: string) => {
+    const senderId = currentUserId;
+    const receiverId = chatWithUserId;
+
+    const messageRefSender = doc(db, "chats", senderId, receiverId, msg.id);
+    const messageRefReceiver = doc(db, "chats", receiverId, senderId, msg.id);
+
+    const updatedReactions = { ...(msg.reactions || {}) };
+    if (updatedReactions[senderId] === emoji) {
+      delete updatedReactions[senderId];
+    } else {
+      updatedReactions[senderId] = emoji;
+    }
+
+    try {
+      await Promise.all([
+        updateDoc(messageRefSender, { reactions: updatedReactions }),
+        updateDoc(messageRefReceiver, { reactions: updatedReactions }),
+      ]);
+    } catch (err) {
+      console.error("Failed to update reactions:", err);
+    }
+  };
+
+
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files?.length) return;
@@ -173,18 +200,62 @@ const ChatBox: FC<ChatBoxProps> = ({ chatWithUserId, chatWithUsername, currentUs
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-2">
         {messages.map(msg => (
-          <div key={msg.id} className={`flex items-end space-x-2 ${msg.senderId === currentUserId ? "justify-end" : "justify-start"}`}>
+          <div
+            key={msg.id}
+            className={`flex items-end ${msg.senderId === currentUserId ? "justify-end" : "justify-start"} relative`}
+          >
             {msg.senderId !== currentUserId && (
-              <img src={msg.senderAvatar || profile.avatar || "/default-avatar.png"} alt={msg.senderName} className="w-8 h-8 rounded-full mr-2" />
+              <img
+                src={msg.senderAvatar || profile.avatar || "/default-avatar.png"}
+                alt={msg.senderName}
+                className="w-8 h-8 rounded-full mr-2"
+              />
             )}
-            <div className="relative group">
-              <div className={`px-4 py-2 rounded-lg max-w-xs break-words ${msg.senderId === currentUserId ? "bg-blue-500 text-white" : "bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100"}`}>
+
+            <div className="flex flex-col max-w-xs">
+              {/* Message bubble */}
+              <div
+                className={`px-4 py-2 rounded-lg break-words relative cursor-pointer ${
+                  msg.senderId === currentUserId
+                    ? "bg-blue-500 text-white"
+                    : "bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                }`}
+                onClick={() => setSelectedMessage(msg.id)}
+              >
                 {msg.text}
-                {msg.imageUrl && <img src={msg.imageUrl} alt="sent image" className="mt-2 rounded max-w-full" />}
+                {msg.imageUrl && (
+                  <img src={msg.imageUrl} alt="sent image" className="mt-2 rounded max-w-full" />
+                )}
               </div>
+
+              {/* Inline reactions */}
+              {msg.reactions && Object.keys(msg.reactions).length > 0 && (
+                <div className="flex space-x-1 mt-1 ml-1">
+                  {Object.values(msg.reactions).map((emoji, idx) => (
+                    <span key={idx} className="text-sm">{emoji}</span>
+                  ))}
+                </div>
+              )}
+
+              {/* Reaction buttons (show when message selected) */}
+              {selectedMessage === msg.id && (
+                <div className="flex space-x-1 mt-1 ml-1">
+                  {["👍","❤️","😂","😮","😢","👎"].map(emoji => (
+                    <button
+                      key={emoji}
+                      className="text-sm px-1 hover:bg-gray-300 rounded"
+                      onClick={() => toggleReaction(msg, emoji)}
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         ))}
+
+
         <div ref={messagesEndRef} />
       </div>
 
