@@ -223,9 +223,15 @@ export default function Home() {
       <div className="flex flex-col md:flex-row min-h-screen bg-gray-50 dark:bg-gray-900">
         {/* Sidebar - Users list */}
         <div className="w-full md:w-1/4 p-4 bg-white dark:bg-gray-800 shadow-md rounded-md">
-          <h2 className="text-xl font-bold mb-4 text-gray-800 dark:text-gray-100">
-            Welcome, {user.username}
+          <h2 className="flex items-center text-xl font-bold mb-4 text-gray-800 dark:text-gray-100 space-x-2">
+            <img
+              src={user.avatar || `https://avatars.dicebear.com/api/identicon/${user.uid}.svg`}
+              alt={user.username}
+              className="w-10 h-10 rounded-full"
+            />
+            <span>Welcome, {user.username}</span>
           </h2>
+
           <button
             className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition mb-4"
             onClick={handleSignOut}
