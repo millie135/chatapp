@@ -5,6 +5,7 @@ import { db, auth, rtdb, storage } from "@/firebaseConfig";
 import { ref as rtdbRef, onValue } from "firebase/database";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { collection, doc, onSnapshot, query, orderBy, serverTimestamp, setDoc, getDoc } from "firebase/firestore";
+import EmojiPicker, { EmojiClickData } from "emoji-picker-react";
 
 interface ChatBoxProps {
   chatWithUserId: string;
@@ -68,16 +69,41 @@ const ChatBox: FC<ChatBoxProps> = ({ chatWithUserId, chatWithUsername, currentUs
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
   const popupRef = useRef<HTMLDivElement>(null);
+  const emojiButtonRef = useRef<HTMLButtonElement>(null); // for the button
+  const emojiPickerRef = useRef<HTMLDivElement>(null);    // for the picker
+
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+
+  const handleEmojiClick = (emojiData: EmojiClickData) => {
+    setMessage(prev => prev + emojiData.emoji);
+  };
+
 
   const scrollToBottom = () => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
 
   // Close popup when clicking outside
-  useEffect(() => {
+  /*useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (popupRef.current && !popupRef.current.contains(event.target as Node)) {
         setSelectedMessageId(null);
       }
     };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);*/
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        emojiPickerRef.current &&
+        !emojiPickerRef.current.contains(event.target as Node) &&
+        emojiButtonRef.current &&
+        !emojiButtonRef.current.contains(event.target as Node)
+      ) {
+        setShowEmojiPicker(false);
+      }
+    };
+
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
@@ -302,7 +328,7 @@ const ChatBox: FC<ChatBoxProps> = ({ chatWithUserId, chatWithUsername, currentUs
 
       {/* Input */}
       <div className="relative w-full">
-        <div className="flex items-center border-t border-gray-200 dark:border-gray-700 p-3">
+        <div className="relative w-full flex items-center border-t border-gray-200 dark:border-gray-700 p-3">
           <input
             type="text"
             placeholder="Type a message..."
@@ -311,6 +337,21 @@ const ChatBox: FC<ChatBoxProps> = ({ chatWithUserId, chatWithUsername, currentUs
             onKeyDown={e => e.key === "Enter" && sendMessage(message)}
             className="flex-1 border border-gray-300 dark:border-gray-600 rounded-lg p-2 mr-2 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
           />
+          {/* Emoji Button */}
+          <button
+            type="button"
+            ref={emojiButtonRef}
+            onClick={() => setShowEmojiPicker(prev => !prev)}
+            className="mr-2 text-xl"
+          >
+            😀
+          </button>
+
+          {showEmojiPicker && (
+            <div ref={emojiPickerRef} className="absolute bottom-12 left-0 z-50 shadow-lg" style={{ minWidth: "280px" }}>
+              <EmojiPicker onEmojiClick={handleEmojiClick} />
+            </div>
+          )}
           <label className="bg-gray-300 dark:bg-gray-600 hover:bg-gray-400 dark:hover:bg-gray-500 px-3 py-2 rounded cursor-pointer text-sm">
             {uploading ? "Uploading..." : "📷"}
             <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
