@@ -211,30 +211,38 @@ export default function Home() {
             {users.map((u) => (
               <button
                 key={u.id}
-                className={`relative block w-full text-left px-2 py-1 rounded ${
+                className={`flex items-center justify-between w-full px-3 py-2 rounded transition-colors ${
                   chatUser?.id === u.id
                     ? "bg-blue-500 text-white"
-                    : "hover:bg-gray-200 dark:hover:bg-gray-700"
+                    : "hover:bg-gray-100 dark:hover:bg-gray-700"
                 }`}
                 onClick={() => handleSelectUser(u)}
               >
-                <div className="flex justify-between items-center">
-                  <span>{u.username}</span>
-                  <span
-                    className={`text-xs font-medium ${
-                      userStatuses[u.id] ? "text-green-500" : "text-gray-400"
-                    }`}
-                  >
-                    {userStatuses[u.id] ? "Online" : "Offline"}
-                  </span>
+                <div className="flex items-center space-x-2">
+                  <img
+                    src={u.avatar || `https://avatars.dicebear.com/api/identicon/${u.id}.svg`}
+                    alt={u.username}
+                    className="w-8 h-8 rounded-full"
+                  />
+                  <span className="font-medium">{u.username}</span>
                 </div>
 
-                {/* 🔹 Unread badge */}
-                {unreadCounts[u.id] > 0 && (
-                  <span className="absolute right-2 top-1/2 -translate-y-1/2 bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">
-                    {unreadCounts[u.id]}
-                  </span>
-                )}
+                <div className="flex items-center space-x-2">
+                  {/* Online/Offline dot */}
+                  <span
+                    className={`w-3 h-3 rounded-full ${
+                      userStatuses[u.id] ? "bg-green-500" : "bg-gray-400"
+                    }`}
+                    title={userStatuses[u.id] ? "Online" : "Offline"}
+                  ></span>
+
+                  {/* Unread badge */}
+                  {unreadCounts[u.id] > 0 && (
+                    <span className="bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full min-w-[20px] text-center">
+                      {unreadCounts[u.id]}
+                    </span>
+                  )}
+                </div>
               </button>
             ))}
           </div>

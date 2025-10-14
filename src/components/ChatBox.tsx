@@ -1,4 +1,5 @@
 "use client";
+
 import { FC, useEffect, useState, useRef } from "react";
 import { db, auth, rtdb, storage } from "@/firebaseConfig";
 import { ref as rtdbRef, onValue } from "firebase/database";
@@ -31,16 +32,6 @@ interface UserProfile {
 }
 
 const emojiReactions = ["👍", "❤️", "😂", "😮", "😢", "😡"];
-const emojiMap: Record<string, string> = {
-  ":D": "😄",
-  ":)": "😊",
-  ":(": "☹️",
-  "<3": "❤️",
-  ":P": "😛",
-  ":O": "😮",
-  ":/": "😕",
-};
-
 
 const ChatBox: FC<ChatBoxProps> = ({ chatWithUserId, chatWithUsername, currentUserId }) => {
   const [message, setMessage] = useState("");
@@ -53,10 +44,13 @@ const ChatBox: FC<ChatBoxProps> = ({ chatWithUserId, chatWithUsername, currentUs
 
   const scrollToBottom = () => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
 
-  // Click outside to close popup
+  // Close popup when clicking outside
+  const popupRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (chatBoxRef.current && !chatBoxRef.current.contains(event.target as Node)) {
+      if (popupRef.current &&
+      !popupRef.current.contains(event.target as Node)) {
         setSelectedMessageId(null);
       }
     };
@@ -114,16 +108,15 @@ const ChatBox: FC<ChatBoxProps> = ({ chatWithUserId, chatWithUsername, currentUs
   const sendMessage = async (text?: string, imageUrl?: string) => {
     if (!text?.trim() && !imageUrl) return;
 
-    const finalText = replaceTextWithEmoji(text || "");
     const senderId = currentUserId;
     const receiverId = chatWithUserId;
     const senderName = auth.currentUser?.displayName || auth.currentUser?.email || "Unknown";
-    const senderAvatar = auth.currentUser?.photoURL || "https://api.dicebear.com/9.x/lorelei/svg";
+    const senderAvatar = auth.currentUser?.photoURL || `https://avatars.dicebear.com/api/identicon/${currentUserId}.svg`;
     const messageId = doc(collection(db, "chats", senderId, receiverId)).id;
 
     const messageData: Message = {
       id: messageId,
-      text: finalText,
+      text: text || "",
       senderId,
       senderName,
       senderAvatar,
@@ -161,28 +154,11 @@ const ChatBox: FC<ChatBoxProps> = ({ chatWithUserId, chatWithUsername, currentUs
         setDoc(messageRefSender, { reactions: updatedReactions }, { merge: true }),
         setDoc(messageRefReceiver, { reactions: updatedReactions }, { merge: true }),
       ]);
-      setSelectedMessageId(null); // close popup after selection
+      setSelectedMessageId(null);
     } catch (err) {
       console.error("Failed to update reactions:", err);
     }
   };
-
-  const replaceTextWithEmoji = (text: string) => {
-    let result = text;
-    Object.entries(emojiMap).forEach(([shortcut, emoji]) => {
-      const regex = new RegExp(shortcut.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), "g"); // escape special chars
-      result = result.replace(regex, emoji);
-    });
-    return result;
-  };
-
-  const formatTimestamp = (timestamp: any) => {
-    if (!timestamp) return "";
-    const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
-    return `${date.getHours()}:${date.getMinutes().toString().padStart(2, "0")}`;
-  };
-
-
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files?.length) return;
@@ -205,7 +181,7 @@ const ChatBox: FC<ChatBoxProps> = ({ chatWithUserId, chatWithUsername, currentUs
   if (!profile) return null;
 
   return (
-    <div className="flex flex-col h-full bg-white dark:bg-gray-800 shadow-md rounded-md border border-gray-200 dark:border-gray-700">
+    <div className="flex flex-col h-full max-h-screen bg-white dark:bg-gray-800 shadow-md rounded-md border border-gray-200 dark:border-gray-700">
       {/* Header */}
       <div className="flex items-center p-4 border-b border-gray-200 dark:border-gray-700">
         <img src={profile.avatar || "/default-avatar.png"} alt={profile.username} className="w-10 h-10 rounded-full mr-3" />
@@ -218,11 +194,11 @@ const ChatBox: FC<ChatBoxProps> = ({ chatWithUserId, chatWithUsername, currentUs
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-2" ref={chatBoxRef}>
+      <div ref={chatBoxRef} className="flex-1 overflow-y-auto p-4 space-y-2">
         {messages.map(msg => {
           const isSender = msg.senderId === currentUserId;
           return (
-            <div key={msg.id} className={`flex items-end ${isSender ? "justify-end" : "justify-start"}`}>
+            <div key={msg.id} className={`flex ${isSender ? "justify-end" : "justify-start"} items-end`}>
               {!isSender && (
                 <img
                   src={msg.senderAvatar || profile.avatar || "/default-avatar.png"}
@@ -230,14 +206,13 @@ const ChatBox: FC<ChatBoxProps> = ({ chatWithUserId, chatWithUsername, currentUs
                   className="w-8 h-8 rounded-full mr-2"
                 />
               )}
+              
 
-              {/* Bubble wrapper */}
-              <div className="relative flex flex-col max-w-xs">
+              <div className="flex flex-col max-w-xs relative">
+                {/* Message bubble */}
                 <div
-                  className={`px-4 py-2 rounded-lg break-words relative cursor-pointer ${
-                    isSender
-                      ? "bg-blue-500 text-white"
-                      : "bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                  className={`px-4 py-2 rounded-lg break-words ${
+                    isSender ? "bg-blue-500 text-white" : "bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100"
                   }`}
                   onClick={() => setSelectedMessageId(msg.id === selectedMessageId ? null : msg.id)}
                 >
@@ -247,12 +222,12 @@ const ChatBox: FC<ChatBoxProps> = ({ chatWithUserId, chatWithUsername, currentUs
 
                 {/* Timestamp */}
                 <span className="text-xs text-gray-500 mt-1 self-end">
-                  {formatTimestamp(msg.timestamp)}
+                  {msg.timestamp?.toDate ? msg.timestamp.toDate().toLocaleTimeString() : ""}
                 </span>
 
                 {/* Popup reactions */}
                 {selectedMessageId === msg.id && (
-                  <div className={`absolute -top-10 ${isSender ? "right-0" : "left-0"} flex bg-white shadow-lg rounded-full p-1 z-50`} onClick={e => e.stopPropagation()}>
+                  <div ref={popupRef} className={`absolute ${isSender ? "right-0" : "left-0"} flex bg-white shadow-lg rounded-full p-1 z-50 -top-10`}>
                     {emojiReactions.map((emoji) => (
                       <button
                         key={emoji}
@@ -267,22 +242,21 @@ const ChatBox: FC<ChatBoxProps> = ({ chatWithUserId, chatWithUsername, currentUs
 
                 {/* Inline reactions */}
                 {msg.reactions && Object.keys(msg.reactions).length > 0 && (
-                  <div className="flex space-x-1 mt-1 ml-1">
-                    {Object.entries(msg.reactions).map(([userId, emoji], idx) => (
-                      <span key={idx} className="text-sm">
-                        {emoji} {/* Emoji displayed */}
-                      </span>
+                  <div className="flex space-x-1 mt-1">
+                    {Object.values(msg.reactions).map((emoji, idx) => (
+                      <span key={idx} className="text-sm">{emoji}</span>
                     ))}
                   </div>
                 )}
               </div>
-              {isSender && (
-                <img
-                  src={msg.senderAvatar || "/default-avatar.png"}
-                  alt={msg.senderName}
-                  className="w-8 h-8 rounded-full ml-2"
-                />
-              )}
+              {/* Avatar for sender on right */}
+                {isSender && (
+                  <img
+                    src={msg.senderAvatar || profile.avatar || "/default-avatar.png"}
+                    alt={msg.senderName}
+                    className="w-8 h-8 rounded-full ml-2"
+                  />
+                )}
             </div>
           );
         })}
