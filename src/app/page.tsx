@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef  } from "react";
 import SignUp from "@/components/SignUp";
 import SignIn from "@/components/SignIn";
 import ChatBox from "@/components/ChatBox";
@@ -28,6 +28,8 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [userStatuses, setUserStatuses] = useState<{ [key: string]: boolean }>({});
   const [unreadCounts, setUnreadCounts] = useState<{ [key: string]: number }>({});
+  const prevUnreadCounts = useRef<{ [key: string]: number }>({});
+
 
   // 🔹 Listen to auth state
   useEffect(() => {
@@ -45,36 +47,44 @@ export default function Home() {
     return () => unsubscribe();
   }, []);
 
-  // 🔹 Track online/offline
+  // Track online/offline
   useEffect(() => {
     if (!user) return;
 
-    const userRef = doc(db, "users", user.uid);
-    const statusRef = ref(rtdb, `/status/${user.uid}`);
+    const userStatusRef = ref(rtdb, `/status/${user.uid}`);
     const connectedRef = ref(rtdb, ".info/connected");
+    const userRef = doc(db, "users", user.uid);
 
+    // Ensure user profile exists in Firestore
     setDoc(
       userRef,
       {
         email: user.email,
-        avatar: user.photoURL || `https://avatars.dicebear.com/api/identicon/${user.uid}.svg`,
+        username: user.displayName || user.email.split("@")[0],
+        avatar:
+          user.photoURL ||
+          `https://avatars.dicebear.com/api/identicon/${user.uid}.svg`,
       },
       { merge: true }
     );
 
-    const unsubscribeConnected = onValue(connectedRef, (snap) => {
-      if (snap.val() === true) {
-        rtdbSet(statusRef, true);
-        onDisconnect(statusRef)
-          .set(false)
-          .then(() => updateDoc(userRef, { lastSeen: serverTimestamp() }));
-      }
+    const unsubscribe = onValue(connectedRef, (snapshot) => {
+      if (snapshot.val() === false) return;
+
+      // When client disconnects, mark offline
+      onDisconnect(userStatusRef)
+        .set(false)
+        .then(() => {
+          // When online, set true
+          rtdbSet(userStatusRef, true);
+        });
     });
 
-    return () => unsubscribeConnected();
+    return () => unsubscribe();
   }, [user]);
 
-  // 🔹 Fetch all users except current
+
+  // Fetch all users except current
   useEffect(() => {
     if (!user) return;
     const unsubscribe = onSnapshot(collection(db, "users"), (snapshot) => {
@@ -86,7 +96,7 @@ export default function Home() {
     return () => unsubscribe();
   }, [user]);
 
-  // 🔹 Track users' online status (RTDB)
+  // Track users' online status (RTDB)
   useEffect(() => {
     if (!users.length) return;
     const unsubscribers: (() => void)[] = [];
@@ -102,7 +112,7 @@ export default function Home() {
     return () => unsubscribers.forEach((fn) => fn());
   }, [users]);
 
-  // 🔹 Unread message listener + new message alert
+  // Unread message listener + new message alert
   useEffect(() => {
     if (!user || !users.length) return;
 
@@ -113,62 +123,57 @@ export default function Home() {
       const q = query(messagesRef, orderBy("timestamp", "desc"));
 
       const unsubscribe = onSnapshot(q, (snapshot) => {
-        let unread = 0;
-        let latest: any = null;
+        // Count unread messages from this user
+        const unreadCount = snapshot.docs.filter(
+          (doc) => doc.data().senderId === u.id && !doc.data().read
+        ).length;
 
-        snapshot.docChanges().forEach((change) => {
-          const data = change.doc.data() as any;
+        setUnreadCounts((prev) => ({
+          ...prev,
+          [u.id]: unreadCount,
+        }));
 
-          if (change.type === "added" && data.senderId === u.id && !data.read) {
-            unread++;
-            latest = data;
-          }
-        });
-
-        if (unread > 0 && latest) {
-          // 🔔 Optional: play sound for new incoming message
+        // Optional: play sound only if new unread appears
+        if (
+          unreadCount > (prevUnreadCounts.current[u.id] || 0) &&
+          chatUser?.id !== u.id // only alert if not chatting with them
+        ) {
           const audio = new Audio("/notify.mp3");
           audio.play().catch(() => {});
-
-          // update unread count
-          setUnreadCounts((prev) => ({
-            ...prev,
-            [u.id]: (prev[u.id] || 0) + unread,
-          }));
-        } else {
-          // recalc total unread count on full snapshot
-          const totalUnread = snapshot.docs.filter(
-            (doc) => doc.data().senderId === u.id && !doc.data().read
-          ).length;
-
-          setUnreadCounts((prev) => ({ ...prev, [u.id]: totalUnread }));
         }
+
+        // Track previous count for sound logic
+        prevUnreadCounts.current[u.id] = unreadCount;
       });
 
       unsubscribers.push(unsubscribe);
     });
 
     return () => unsubscribers.forEach((fn) => fn());
-  }, [users, user]);
+  }, [users, user, chatUser]);
 
-  // 🔹 Mark messages as read when user opens a chat
+
+  // Mark messages as read when user opens a chat
   const handleSelectUser = async (u: any) => {
-    setChatUser(u);
+    if (chatUser?.id === u.id) return; // already open
 
-    // reset unread count immediately
+    setChatUser(u);
     setUnreadCounts((prev) => ({ ...prev, [u.id]: 0 }));
 
-    // mark all unread messages as read
+    // 🔹 Mark unread messages as read
     const q = query(
       collection(db, "chats", user.uid, u.id),
       where("read", "==", false)
     );
     const snapshot = await getDocs(q);
-    const updates = snapshot.docs.map((docSnap) => updateDoc(docSnap.ref, { read: true }));
+    const updates = snapshot.docs.map((docSnap) =>
+      updateDoc(docSnap.ref, { read: true })
+    );
     await Promise.all(updates);
   };
 
-  // 🔹 Sign out
+
+  // Sign out
   const handleSignOut = async () => {
     if (!user) return;
 
@@ -178,7 +183,7 @@ export default function Home() {
     await auth.signOut();
   };
 
-  // 🔹 Loading state
+  // Loading state
   if (loading)
     return (
       <div className="flex items-center justify-center min-h-screen bg-gray-50 dark:bg-gray-900">
@@ -186,7 +191,7 @@ export default function Home() {
       </div>
     );
 
-  // 🔹 Logged in
+  // Logged in
   if (user)
     return (
       <div className="flex flex-col md:flex-row min-h-screen bg-gray-50 dark:bg-gray-900">
@@ -253,7 +258,7 @@ export default function Home() {
       </div>
     );
 
-  // 🔹 Not signed in
+  // Not signed in
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50 dark:bg-gray-900 space-y-6 px-4">
       <div className="w-full max-w-md">
