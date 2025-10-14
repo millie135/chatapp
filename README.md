@@ -57,3 +57,18 @@ service cloud.firestore {
     }
   }
 } -->
+
+
+
+<!-- real time database -->
+<!-- 
+{
+  "rules": {
+    "status": {
+      "$uid": {
+        ".read": "auth != null",          // signed-in users can read any status
+        ".write": "auth != null && auth.uid === $uid" // can write own status
+      }
+    }
+  }
+} -->
