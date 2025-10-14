@@ -27,7 +27,7 @@ export default function SignUp() {
         username: username,
         email,
         role: "user", // default role
-        avatar: `https://avatars.dicebear.com/api/identicon/${user.uid}.svg`,
+        avatar: avatar || `https://avatars.dicebear.com/api/identicon/${user.uid}.svg`,
         createdAt: new Date()
       });
 
