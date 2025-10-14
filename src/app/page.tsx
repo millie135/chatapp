@@ -38,7 +38,7 @@ export default function Home() {
         const userRef = doc(db, "users", u.uid);
         const userSnap = await getDoc(userRef);
         const userData = userSnap.data();
-        setUser({ ...u, username: userData?.username || u.email });
+        setUser({ ...u, username: userData?.username || u.email, avatar: userData?.avatar || `https://avatars.dicebear.com/api/identicon/${u.uid}.svg` });
       } else {
         setUser(null);
       }
@@ -53,7 +53,7 @@ export default function Home() {
 
     const userStatusRef = ref(rtdb, `/status/${user.uid}`);
     const connectedRef = ref(rtdb, ".info/connected");
-    const userRef = doc(db, "users", user.uid);
+    /*const userRef = doc(db, "users", user.uid);
 
     // Ensure user profile exists in Firestore
     setDoc(
@@ -66,7 +66,27 @@ export default function Home() {
           `https://avatars.dicebear.com/api/identicon/${user.uid}.svg`,
       },
       { merge: true }
-    );
+    );*/
+
+
+    const updateUserProfile = async () => {
+      const userRef = doc(db, "users", user.uid);
+      const userSnap = await getDoc(userRef);
+      const userData = userSnap.data();
+
+      // Only set default avatar if it does not exist
+      await setDoc(
+        userRef,
+        {
+          email: user.email,
+          username: userData?.username || user.displayName || user.email.split("@")[0],
+          avatar: userData?.avatar || user.avatar || `https://avatars.dicebear.com/api/identicon/${user.uid}.svg`,
+        },
+        { merge: true }
+      );
+    };
+
+    updateUserProfile();
 
     const unsubscribe = onValue(connectedRef, (snapshot) => {
       if (snapshot.val() === false) return;
@@ -90,7 +110,13 @@ export default function Home() {
     const unsubscribe = onSnapshot(collection(db, "users"), (snapshot) => {
       const allUsers = snapshot.docs
         .filter((doc) => doc.id !== user.uid)
-        .map((doc) => ({ id: doc.id, ...doc.data() }));
+        .map((doc) => ({
+          id: doc.id,
+          username: doc.data().username,
+          email: doc.data().email,
+          avatar: doc.data().avatar, // ✅ include avatar
+          role: doc.data().role,
+        }));
       setUsers(allUsers);
     });
     return () => unsubscribe();

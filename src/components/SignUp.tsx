@@ -22,12 +22,17 @@ export default function SignUp() {
       const user = userCredential.user;
       //const uid = userCredential.user.uid;
 
+      const avatarUrl =
+      avatar.trim() !== ""
+        ? avatar.trim()
+        : `https://avatars.dicebear.com/api/identicon/${user.uid}.svg`;
+
       // Save additional info in Firestore
       await setDoc(doc(db, "users", user.uid), {
         username: username,
         email,
         role: "user", // default role
-        avatar: avatar || `https://avatars.dicebear.com/api/identicon/${user.uid}.svg`,
+        avatar: avatarUrl,
         createdAt: new Date()
       });
 

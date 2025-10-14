@@ -37,18 +37,21 @@ const ChatBox: FC<ChatBoxProps> = ({ chatWithUserId, chatWithUsername, currentUs
   const [message, setMessage] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [currentUserProfile, setCurrentUserProfile] = useState<UserProfile | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [currentUserProfile, setCurrentUserProfile] = useState<UserProfile | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
-  const popupRef = useRef<HTMLDivElement>(null);
+  const chatBoxRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
 
   // Close popup when clicking outside
+  const popupRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (popupRef.current && !popupRef.current.contains(event.target as Node)) {
+      if (popupRef.current &&
+      !popupRef.current.contains(event.target as Node)) {
         setSelectedMessageId(null);
       }
     };
@@ -56,7 +59,7 @@ const ChatBox: FC<ChatBoxProps> = ({ chatWithUserId, chatWithUsername, currentUs
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Fetch chatWith user profile
+  // Fetch chat user profile
   useEffect(() => {
     const profileRef = doc(db, "users", chatWithUserId);
     const statusRef = rtdbRef(rtdb, `/status/${chatWithUserId}`);
@@ -79,14 +82,17 @@ const ChatBox: FC<ChatBoxProps> = ({ chatWithUserId, chatWithUsername, currentUs
     };
   }, [chatWithUserId]);
 
-  // Fetch current user profile
+  // Fetch current user's profile (for sending messages)
   useEffect(() => {
     const userRef = doc(db, "users", currentUserId);
     const unsubscribe = onSnapshot(userRef, (docSnap) => {
-      if (docSnap.exists()) setCurrentUserProfile(docSnap.data() as UserProfile);
+      if (docSnap.exists()) {
+        setCurrentUserProfile(docSnap.data() as UserProfile);
+      }
     });
     return () => unsubscribe();
   }, [currentUserId]);
+
 
   // Listen to messages
   useEffect(() => {
@@ -112,13 +118,57 @@ const ChatBox: FC<ChatBoxProps> = ({ chatWithUserId, chatWithUsername, currentUs
 
   useEffect(scrollToBottom, [messages]);
 
+  /*const sendMessage = async (text?: string, imageUrl?: string) => {
+    if (!text?.trim() && !imageUrl) return;
+
+    const senderId = currentUserId;
+    const receiverId = chatWithUserId;
+    // const senderName = auth.currentUser?.displayName || auth.currentUser?.email || "Unknown";
+    //const senderAvatar = auth.currentUser?.photoURL || `https://avatars.dicebear.com/api/identicon/${currentUserId}.svg`;
+     const senderName =
+      currentUserProfile?.username ||
+      auth.currentUser?.displayName ||
+      auth.currentUser?.email ||
+      "Unknown";
+
+    const senderAvatar =
+      currentUserProfile?.avatar ||
+      auth.currentUser?.photoURL ||
+      `https://avatars.dicebear.com/api/identicon/${currentUserId}.svg`;
+
+    const messageId = doc(collection(db, "chats", senderId, receiverId)).id;
+
+    const messageData: Message = {
+      id: messageId,
+      text: text || "",
+      senderId,
+      senderName,
+      senderAvatar,
+      timestamp: serverTimestamp(),
+      imageUrl: imageUrl ?? null,
+      reactions: {},
+      read: false,
+      to: receiverId,
+    };
+
+    try {
+      await Promise.all([
+        setDoc(doc(db, "chats", senderId, receiverId, messageId), messageData),
+        setDoc(doc(db, "chats", receiverId, senderId, messageId), messageData),
+      ]);
+      setMessage("");
+    } catch (err) {
+      console.error("Error sending message:", err);
+    }
+  };*/
+
   const sendMessage = async (text?: string, imageUrl?: string) => {
     if (!text?.trim() && !imageUrl) return;
 
     const senderId = currentUserId;
     const receiverId = chatWithUserId;
 
-    // Fetch sender profile from Firestore
+    // Fetch sender profile from Firestore (ensures correct avatar)
     const userSnap = await getDoc(doc(db, "users", senderId));
     const userData = userSnap.data();
 
@@ -150,6 +200,7 @@ const ChatBox: FC<ChatBoxProps> = ({ chatWithUserId, chatWithUsername, currentUs
       console.error("Error sending message:", err);
     }
   };
+
 
   const toggleReaction = async (msg: Message, emoji: string) => {
     const senderId = currentUserId;
@@ -191,7 +242,7 @@ const ChatBox: FC<ChatBoxProps> = ({ chatWithUserId, chatWithUsername, currentUs
     }
   };
 
-  if (!profile || !currentUserProfile) return null;
+  if (!profile) return null;
 
   return (
     <div className="flex flex-col h-full max-h-screen bg-white dark:bg-gray-800 shadow-md rounded-md border border-gray-200 dark:border-gray-700">
@@ -207,67 +258,83 @@ const ChatBox: FC<ChatBoxProps> = ({ chatWithUserId, chatWithUsername, currentUs
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-2">
-        {messages.map(msg => {
-          const isSender = msg.senderId === currentUserId;
-          const displayName = msg.senderName;
-          const displayAvatar = msg.senderAvatar;
+      {/* Messages */}
+<div ref={chatBoxRef} className="flex-1 overflow-y-auto p-4 space-y-2">
+  {messages.map(msg => {
+    const isSender = msg.senderId === currentUserId;
+    return (
+      <div key={msg.id} className={`flex ${isSender ? "justify-end" : "justify-start"} items-end`}>
+        {/* Avatar */}
+        <img
+          src={msg.senderAvatar || `https://avatars.dicebear.com/api/identicon/${msg.senderId}.svg`}
+          alt={msg.senderName}
+          className={`w-8 h-8 rounded-full ${isSender ? "ml-2" : "mr-2"}`}
+        />
 
-          return (
-            <div key={msg.id} className={`flex ${isSender ? "justify-end" : "justify-start"} items-end`}>
-              {/* Avatar */}
+        {/* Message bubble */}
+        <div className="flex flex-col max-w-xs relative">
+          <div
+            className={`px-4 py-2 rounded-lg break-words ${
+              isSender
+                ? "bg-blue-500 text-white"
+                : "bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+            }`}
+            onClick={() =>
+              setSelectedMessageId(msg.id === selectedMessageId ? null : msg.id)
+            }
+          >
+            {msg.text}
+            {msg.imageUrl && (
               <img
-                src={displayAvatar || `https://avatars.dicebear.com/api/identicon/${msg.senderId}.svg`}
-                alt={displayName}
-                className={`w-8 h-8 rounded-full ${isSender ? "ml-2" : "mr-2"}`}
+                src={msg.imageUrl}
+                alt="sent image"
+                className="mt-2 rounded max-w-full"
               />
+            )}
+          </div>
 
-              <div className="flex flex-col max-w-xs relative">
-                {/* Username */}
-                <span className={`text-xs font-semibold mb-1 ${isSender ? "text-right" : "text-left"} text-gray-700 dark:text-gray-300`}>
-                  {displayName}
-                </span>
+          {/* Timestamp */}
+          <span className="text-xs text-gray-500 mt-1 self-end">
+            {msg.timestamp?.toDate
+              ? msg.timestamp.toDate().toLocaleTimeString()
+              : ""}
+          </span>
 
-                {/* Message bubble */}
-                <div className={`px-4 py-2 rounded-lg break-words ${
-                  isSender ? "bg-blue-500 text-white" : "bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-                }`}
-                  onClick={() => setSelectedMessageId(msg.id === selectedMessageId ? null : msg.id)}
+          {/* Popup reactions */}
+          {selectedMessageId === msg.id && (
+            <div
+              ref={popupRef}
+              className={`absolute ${isSender ? "right-0" : "left-0"} flex bg-white shadow-lg rounded-full p-1 z-50 -top-10`}
+            >
+              {emojiReactions.map((emoji) => (
+                <button
+                  key={emoji}
+                  className="text-lg px-1 hover:scale-125 transition-transform"
+                  onClick={() => toggleReaction(msg, emoji)}
                 >
-                  {msg.text}
-                  {msg.imageUrl && <img src={msg.imageUrl} alt="sent image" className="mt-2 rounded max-w-full" />}
-                </div>
-
-                {/* Timestamp */}
-                <span className="text-xs text-gray-500 mt-1 self-end">
-                  {msg.timestamp?.toDate ? msg.timestamp.toDate().toLocaleTimeString() : ""}
-                </span>
-
-                {/* Popup reactions */}
-                {selectedMessageId === msg.id && (
-                  <div ref={popupRef} className={`absolute ${isSender ? "right-0" : "left-0"} flex bg-white shadow-lg rounded-full p-1 z-50 -top-10`}>
-                    {emojiReactions.map(emoji => (
-                      <button key={emoji} className="text-lg px-1 hover:scale-125 transition-transform" onClick={() => toggleReaction(msg, emoji)}>
-                        {emoji}
-                      </button>
-                    ))}
-                  </div>
-                )}
-
-                {/* Inline reactions */}
-                {msg.reactions && Object.keys(msg.reactions).length > 0 && (
-                  <div className="flex space-x-1 mt-1">
-                    {Object.values(msg.reactions).map((emoji, idx) => (
-                      <span key={idx} className="text-sm">{emoji}</span>
-                    ))}
-                  </div>
-                )}
-              </div>
+                  {emoji}
+                </button>
+              ))}
             </div>
-          );
-        })}
-        <div ref={messagesEndRef} />
+          )}
+
+          {/* Inline reactions */}
+          {msg.reactions && Object.keys(msg.reactions).length > 0 && (
+            <div className="flex space-x-1 mt-1">
+              {Object.values(msg.reactions).map((emoji, idx) => (
+                <span key={idx} className="text-sm">
+                  {emoji}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
+    );
+  })}
+  <div ref={messagesEndRef} />
+</div>
+
 
       {/* Input */}
       <div className="relative w-full">
