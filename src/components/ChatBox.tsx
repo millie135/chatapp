@@ -33,6 +33,32 @@ interface UserProfile {
 
 const emojiReactions = ["👍", "❤️", "😂", "😮", "😢", "😡"];
 
+const emojiMap: Record<string, string> = {
+  ":)": "😊",
+  ":D": "😄",
+  ":(": "☹️",
+  ";)": "😉",
+  ":P": "😛",
+  "<3": "❤️",
+  ":O": "😮",
+  ":/": "😕",
+};
+
+const parseEmojis = (text: string) => {
+  let parsed = text;
+  Object.keys(emojiMap).forEach((shortcut) => {
+    const regex = new RegExp(escapeRegExp(shortcut), "g");
+    parsed = parsed.replace(regex, emojiMap[shortcut]);
+  });
+  return parsed;
+};
+
+// Helper to escape regex special characters
+function escapeRegExp(string: string) {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+
 const ChatBox: FC<ChatBoxProps> = ({ chatWithUserId, chatWithUsername, currentUserId }) => {
   const [message, setMessage] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
@@ -234,7 +260,12 @@ const ChatBox: FC<ChatBoxProps> = ({ chatWithUserId, chatWithUsername, currentUs
                 }`}
                   onClick={() => setSelectedMessageId(msg.id === selectedMessageId ? null : msg.id)}
                 >
-                  {msg.text}
+                  {/* {msg.text} */}
+                  {msg.text.startsWith("https://api.dicebear.com/") ? (
+                    <img src={msg.text} alt="DiceBear Avatar" className="rounded max-w-full" />
+                  ) : (
+                    <span>{parseEmojis(msg.text)}</span>  // <-- here we convert shortcuts
+                  )}
                   {msg.imageUrl && <img src={msg.imageUrl} alt="sent image" className="mt-2 rounded max-w-full" />}
                 </div>
 

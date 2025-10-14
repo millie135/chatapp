@@ -258,83 +258,74 @@ const ChatBox: FC<ChatBoxProps> = ({ chatWithUserId, chatWithUsername, currentUs
       </div>
 
       {/* Messages */}
-      {/* Messages */}
-<div ref={chatBoxRef} className="flex-1 overflow-y-auto p-4 space-y-2">
-  {messages.map(msg => {
-    const isSender = msg.senderId === currentUserId;
-    return (
-      <div key={msg.id} className={`flex ${isSender ? "justify-end" : "justify-start"} items-end`}>
-        {/* Avatar */}
-        <img
-          src={msg.senderAvatar || `https://avatars.dicebear.com/api/identicon/${msg.senderId}.svg`}
-          alt={msg.senderName}
-          className={`w-8 h-8 rounded-full ${isSender ? "ml-2" : "mr-2"}`}
-        />
-
-        {/* Message bubble */}
-        <div className="flex flex-col max-w-xs relative">
-          <div
-            className={`px-4 py-2 rounded-lg break-words ${
-              isSender
-                ? "bg-blue-500 text-white"
-                : "bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-            }`}
-            onClick={() =>
-              setSelectedMessageId(msg.id === selectedMessageId ? null : msg.id)
-            }
-          >
-            {msg.text}
-            {msg.imageUrl && (
+      <div ref={chatBoxRef} className="flex-1 overflow-y-auto p-4 space-y-2">
+        {messages.map(msg => {
+          const isSender = msg.senderId === currentUserId;
+          return (
+            <div key={msg.id} className={`flex ${isSender ? "justify-end" : "justify-start"} items-end`}>
+              {/* {!isSender && (
+                
+              )} */}
               <img
-                src={msg.imageUrl}
-                alt="sent image"
-                className="mt-2 rounded max-w-full"
-              />
-            )}
-          </div>
+                  src={msg.senderAvatar || `https://avatars.dicebear.com/api/identicon/${msg.senderId}.svg`}
+                  alt={msg.senderName}
+                 className={`w-8 h-8 rounded-full ${isSender ? "ml-2" : "mr-2"}`}
+                />
 
-          {/* Timestamp */}
-          <span className="text-xs text-gray-500 mt-1 self-end">
-            {msg.timestamp?.toDate
-              ? msg.timestamp.toDate().toLocaleTimeString()
-              : ""}
-          </span>
-
-          {/* Popup reactions */}
-          {selectedMessageId === msg.id && (
-            <div
-              ref={popupRef}
-              className={`absolute ${isSender ? "right-0" : "left-0"} flex bg-white shadow-lg rounded-full p-1 z-50 -top-10`}
-            >
-              {emojiReactions.map((emoji) => (
-                <button
-                  key={emoji}
-                  className="text-lg px-1 hover:scale-125 transition-transform"
-                  onClick={() => toggleReaction(msg, emoji)}
+              <div className="flex flex-col max-w-xs relative">
+                {/* Message bubble */}
+                <div
+                  className={`px-4 py-2 rounded-lg break-words ${
+                    isSender ? "bg-blue-500 text-white" : "bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                  }`}
+                  //onClick={() => setSelectedMessageId(msg.id === selectedMessageId ? null : msg.id)}
                 >
-                  {emoji}
-                </button>
-              ))}
-            </div>
-          )}
+                  {msg.text}
+                  {msg.imageUrl && <img src={msg.imageUrl} alt="sent image" className="mt-2 rounded max-w-full" />}
+                </div>
 
-          {/* Inline reactions */}
-          {msg.reactions && Object.keys(msg.reactions).length > 0 && (
-            <div className="flex space-x-1 mt-1">
-              {Object.values(msg.reactions).map((emoji, idx) => (
-                <span key={idx} className="text-sm">
-                  {emoji}
+                {/* Timestamp */}
+                <span className="text-xs text-gray-500 mt-1 self-end">
+                  {msg.timestamp?.toDate ? msg.timestamp.toDate().toLocaleTimeString() : ""}
                 </span>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  })}
-  <div ref={messagesEndRef} />
-</div>
 
+                {/* Popup reactions */}
+                {selectedMessageId === msg.id && (
+                  <div ref={popupRef} className={`absolute ${isSender ? "right-0" : "left-0"} flex bg-white shadow-lg rounded-full p-1 z-50 -top-10`}>
+                    {emojiReactions.map((emoji) => (
+                      <button
+                        key={emoji}
+                        className="text-lg px-1 hover:scale-125 transition-transform"
+                        onClick={() => toggleReaction(msg, emoji)}
+                      >
+                        {emoji}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* Inline reactions */}
+                {msg.reactions && Object.keys(msg.reactions).length > 0 && (
+                  <div className="flex space-x-1 mt-1">
+                    {Object.values(msg.reactions).map((emoji, idx) => (
+                      <span key={idx} className="text-sm">{emoji}</span>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {/* Avatar for sender on right */}
+                {/* {isSender && (
+                  <img
+                    src={msg.senderAvatar || profile.avatar || "/default-avatar.png"}
+                    alt={msg.senderName}
+                    className="w-8 h-8 rounded-full ml-2"
+                  />
+                )} */}
+            </div>
+          );
+        })}
+        <div ref={messagesEndRef} />
+      </div>
 
       {/* Input */}
       <div className="relative w-full">
