@@ -38,3 +38,22 @@ Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/bui
 
 
 
+<!-- rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Users collection
+    match /users/{userId} {
+      // Allow read if logged in
+      allow read: if request.auth != null;
+      // Allow write only for the authenticated user creating/updating their own doc
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Chats collection
+    match /chats/{userId}/{chatWithUserId}/{messageId} {
+      allow read, write: if request.auth != null
+                         && (request.auth.uid == userId || request.auth.uid == chatWithUserId);
+    }
+  }
+} -->
