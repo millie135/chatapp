@@ -72,3 +72,30 @@ service cloud.firestore {
     }
   }
 } -->
+
+
+<!-- rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Users
+    match /users/{userId} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Groups
+    match /groups/{groupId} {
+      allow read, write: if request.auth != null;
+    }
+
+    // 1-on-1 chats
+    match /chats/{userId}/{chatId}/{messageId} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Group chat messages
+    match /groupChats/{groupId}/messages/{messageId} {
+      allow read, write: if request.auth != null;
+    }
+  }
+} -->
