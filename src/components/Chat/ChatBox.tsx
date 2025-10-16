@@ -99,6 +99,10 @@ const ChatBox: FC<ChatBoxProps> = ({
   const emojiPickerRef = useRef<HTMLDivElement>(null);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [userStatuses, setUserStatuses] = useState<{ [key: string]: boolean }>({});
+  const [showMembers, setShowMembers] = useState(false);
+  const memberListRef = useRef<HTMLDivElement>(null);
+  const memberButtonRef = useRef<HTMLDivElement>(null);
+  const chatBoxRef = useRef<HTMLDivElement>(null);
 
 
   const handleEmojiClick = (emojiData: EmojiClickData) => {
@@ -117,6 +121,13 @@ const ChatBox: FC<ChatBoxProps> = ({
         !emojiButtonRef.current.contains(event.target as Node)
       ) {
         setShowEmojiPicker(false);
+      }
+
+      if (
+        memberListRef.current &&
+        !memberListRef.current.contains(event.target as Node)
+      ) {
+        setShowMembers(false);
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
@@ -315,10 +326,51 @@ const ChatBox: FC<ChatBoxProps> = ({
   if (!profile || !currentUserProfile) return null;
 
   return (
-    <div className="flex flex-col h-full max-h-screen bg-white dark:bg-gray-800 shadow-md rounded-md border border-gray-200 dark:border-gray-700">
+    <div ref={chatBoxRef} className="flex flex-col h-full max-h-screen bg-white dark:bg-gray-800 shadow-md rounded-md border border-gray-200 dark:border-gray-700 relative">
       {/* Header */}
-      <div className="flex items-center p-4 border-b border-gray-200 dark:border-gray-700">
-        <img src={profile.avatar || "/default-avatar.png"} alt={profile.username} className="w-10 h-10 rounded-full mr-3" />
+      <div className="flex items-center p-4 border-b border-gray-200 dark:border-gray-700 justify-between">
+        <div className="flex items-center">
+          <img src={profile.avatar || "/default-avatar.png"} alt={profile.username} className="w-10 h-10 rounded-full mr-3" />
+          <div>
+            <div className="font-bold text-gray-900 dark:text-gray-100">{profile.username}</div>
+            {isGroup && (
+              // <button
+              //   onClick={() => setShowMembers(!showMembers)}
+              //   className="text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+              // >
+              //   {groupMembers?.length} members
+              // </button>
+              <div className="flex dark:border-gray-700">
+                <div className="flex items-center space-x-2">
+                  {/* <div className="font-bold text-gray-900 dark:text-gray-100">{profile?.username}</div> */}
+                  <div
+                    className="text-sm text-gray-500 dark:text-gray-400 cursor-pointer"
+                    onClick={() => setShowMembers(prev => !prev)}
+                  >
+                    {groupMemberProfiles.length} members
+                  </div>
+                </div>
+
+                <div className="flex -space-x-2">
+                  {groupMemberProfiles.map((member) => {
+                    const online = userStatuses[member.id!] || false;
+                    return (
+                      <img
+                        key={member.id}
+                        src={member.avatar || `https://avatars.dicebear.com/api/identicon/${member.id}.svg`}
+                        alt={member.username}
+                        className={`w-6 h-6 rounded-full border-2 border-white ${
+                          online ? "ring-2 ring-green-500" : "ring-2 ring-gray-400"
+                        }`}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+        {/* <img src={profile.avatar || "/default-avatar.png"} alt={profile.username} className="w-10 h-10 rounded-full mr-3" />
         <div>
           <div className="font-bold text-gray-900 dark:text-gray-100">{profile.username}</div>
           {!isGroup && (
@@ -327,7 +379,6 @@ const ChatBox: FC<ChatBoxProps> = ({
             </div>
           )}
 
-          {/* Group member avatars with dots */}
           {isGroup && groupMemberProfiles.length > 0 && (
             <div className="flex flex-wrap mt-1 gap-2">
               {groupMemberProfiles.map((member) => {
@@ -348,8 +399,39 @@ const ChatBox: FC<ChatBoxProps> = ({
               })}
             </div>
           )}
-        </div>
+        </div> */}
       </div>
+
+      {showMembers && (
+        <div
+          ref={memberListRef}
+          className="absolute top-16 left-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg p-4 w-64 z-50"
+        >
+          <h3 className="font-semibold mb-2 text-gray-800 dark:text-gray-100">Group Members</h3>
+          <ul className="space-y-2 max-h-64 overflow-y-auto">
+            {groupMemberProfiles.map((member) => {
+              const online = userStatuses[member.id!] || false;
+              return (
+                <li key={member.id} className="flex items-center space-x-2">
+                  <img
+                    src={member.avatar || `https://avatars.dicebear.com/api/identicon/${member.id}.svg`}
+                    alt={member.username}
+                    className="w-6 h-6 rounded-full"
+                  />
+                  <div className="flex-1">
+                    <div className="text-sm font-medium text-gray-900 dark:text-gray-100">{member.username}</div>
+                    <div className={`text-xs ${online ? "text-green-500" : "text-gray-500"}`}>
+                      {online ? "Online" : "Offline"}
+                    </div>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+
+
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
