@@ -162,6 +162,7 @@ export default function Home() {
     if (!user || !users.length) return;
     const unsubscribers: (() => void)[] = [];
 
+    // 1-on-1 chat unread
     users.forEach((u) => {
       const messagesRef = collection(db, "chats", user.uid, u.id);
       const q = query(messagesRef, orderBy("timestamp", "desc"));
@@ -183,8 +184,34 @@ export default function Home() {
       unsubscribers.push(unsubscribe);
     });
 
+    // Group unread
+    groups.forEach((g) => {
+      const messagesRef = collection(db, "groupChats", g.id, "messages");
+      const q = query(messagesRef, orderBy("timestamp", "desc"));
+
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        let unreadCount = 0;
+        snapshot.docs.forEach((doc) => {
+          const msg = doc.data() as any;
+          if (!msg.readBy?.[user.uid] && msg.senderId !== user.uid) {
+            unreadCount += 1;
+          }
+        });
+
+        setUnreadCounts((prev) => ({ ...prev, [g.id]: unreadCount }));
+
+        if (unreadCount > (prevUnreadCounts.current[g.id] || 0) && chatUser?.id !== g.id) {
+          const audio = new Audio("/notify.mp3");
+          audio.play().catch(() => {});
+        }
+        prevUnreadCounts.current[g.id] = unreadCount;
+      });
+
+      unsubscribers.push(unsubscribe);
+    });
+
     return () => unsubscribers.forEach((fn) => fn());
-  }, [users, user, chatUser]);
+  }, [users, groups, user, chatUser]);
 
   // -------------------
   // Handlers
@@ -201,7 +228,7 @@ export default function Home() {
     await Promise.all(updates);
   };
 
-  const handleSelectGroup = (g: Group) => {
+  const handleSelectGroup = async (g: Group) => {
     setChatUser({
       id: g.id,
       username: g.name,
@@ -209,6 +236,18 @@ export default function Home() {
       members: g.members,
       avatar: g.avatar || `https://avatars.dicebear.com/api/identicon/${g.id}.svg`,
     });
+
+    // Mark unread group messages as read
+    const messagesRef = collection(db, "groupChats", g.id, "messages");
+    const q = query(messagesRef, where(`readBy.${user!.uid}`, "==", false));
+    const snapshot = await getDocs(q);
+    const updates = snapshot.docs.map((docSnap) => {
+      return updateDoc(docSnap.ref, { [`readBy.${user!.uid}`]: true });
+    });
+    await Promise.all(updates);
+
+    setUnreadCounts((prev) => ({ ...prev, [g.id]: 0 }));
+
   };
 
   const handleSignOut = async () => {
@@ -300,6 +339,7 @@ export default function Home() {
           onOpenAddMember={(group) => setSelectedGroup(group)}
           onShowAddMemberModal={(show) => setShowAddMemberModal(show)}
           onShowCreateGroupModal={(show) => setShowCreateGroupModal(show)}
+          groupUnreadCounts={unreadCounts}
         />
       </div>
 

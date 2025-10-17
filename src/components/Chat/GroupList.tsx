@@ -7,6 +7,7 @@ interface Props {
   onOpenAddMember: (group: Group) => void;
   onShowAddMemberModal: (show: boolean) => void;
   onShowCreateGroupModal: (show: boolean) => void;
+  groupUnreadCounts?: { [groupId: string]: number }; // NEW
 }
 
 export default function GroupList({
@@ -15,6 +16,7 @@ export default function GroupList({
   onOpenAddMember,
   onShowAddMemberModal,
   onShowCreateGroupModal,
+  groupUnreadCounts = {}, // NEW
 }: Props) {
   return (
     <div className="mt-6">
@@ -34,7 +36,7 @@ export default function GroupList({
             className="flex items-center justify-between w-full px-3 py-2 rounded transition-colors hover:bg-gray-100 dark:hover:bg-gray-700"
           >
             <button
-              className="flex items-center space-x-2 flex-1"
+              className="flex items-center space-x-2 flex-1 relative"
               onClick={() => onSelectGroup(g)}
             >
               <img
@@ -43,6 +45,12 @@ export default function GroupList({
                 className="w-8 h-8 rounded-full"
               />
               <span className="font-medium">{g.name}</span>
+              {/* Unread badge */}
+              {groupUnreadCounts[g.id] > 0 && (
+                <span className="absolute -top-1 -right-2 bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">
+                  {groupUnreadCounts[g.id]}
+                </span>
+              )}
             </button>
 
             <button

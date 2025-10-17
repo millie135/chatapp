@@ -35,14 +35,8 @@ interface Message {
   imageUrl: string | null;
   reactions?: Record<string, string>;
   to: string;
-  read: boolean;
-}
-
-interface Props {
-  activeChatId: string | null;
-  isGroup: boolean;
-  groupMembers?: string[];
-  profile?: { uid: string; name: string; avatar?: string; online?: boolean };
+  //read: boolean;
+  readBy?: Record<string, boolean>; 
 }
 
 interface UserProfile {
@@ -102,7 +96,7 @@ const ChatBox: FC<ChatBoxProps> = ({
   const memberListRef = useRef<HTMLDivElement>(null);
   const memberButtonRef = useRef<HTMLDivElement>(null);
   const chatBoxRef = useRef<HTMLDivElement>(null);
-
+  const [unreadCount, setUnreadCount] = useState(0);
 
   const handleEmojiClick = (emojiData: EmojiClickData) => {
     setMessage(prev => prev + emojiData.emoji);
@@ -214,7 +208,7 @@ const ChatBox: FC<ChatBoxProps> = ({
   }, [isGroup, groupMembers]);
 
   // Listen to messages
-  useEffect(() => {
+  /*useEffect(() => {
     const messagesRef = isGroup
       ? collection(db, "groupChats", chatWithUserId, "messages")
       : collection(db, "chats", currentUserId, chatWithUserId);
@@ -238,7 +232,54 @@ const ChatBox: FC<ChatBoxProps> = ({
     });
 
     return () => unsubscribe();
+  }, [chatWithUserId, currentUserId, isGroup]);*/
+
+  // Listen to messages
+  
+  useEffect(() => {
+    const messagesRef = isGroup
+      ? collection(db, "groupChats", chatWithUserId, "messages")
+      : collection(db, "chats", currentUserId, chatWithUserId);
+
+    const q = query(messagesRef, orderBy("timestamp"));
+
+    const unsubscribe = onSnapshot(q, async snapshot => {
+      const msgs: Message[] = snapshot.docs.map(docSnap => ({
+        id: docSnap.id,
+        ...(docSnap.data() as Omit<Message, "id">)
+      }));
+      setMessages(msgs);
+
+      // Compute unread messages for current user
+      let newUnreadCount = 0;
+      msgs.forEach(msg => {
+        if (!msg.readBy?.[currentUserId] && msg.senderId !== currentUserId) {
+          newUnreadCount += 1;
+        }
+      });
+      setUnreadCount(newUnreadCount);
+
+      // Immediately mark all visible messages as read
+      const batch: Promise<any>[] = [];
+      msgs.forEach(msg => {
+        if (!msg.readBy?.[currentUserId]) {
+          const msgRef = isGroup
+            ? doc(db, "groupChats", chatWithUserId, "messages", msg.id)
+            : doc(db, "chats", currentUserId, chatWithUserId, msg.id);
+
+          batch.push(
+            setDoc(msgRef, { readBy: { ...(msg.readBy || {}), [currentUserId]: true } }, { merge: true })
+          );
+        }
+      });
+
+      if (batch.length > 0) await Promise.all(batch);
+    });
+
+    return () => unsubscribe();
   }, [chatWithUserId, currentUserId, isGroup]);
+
+
 
   useEffect(scrollToBottom, [messages]);
 
@@ -264,8 +305,9 @@ const ChatBox: FC<ChatBoxProps> = ({
       timestamp: serverTimestamp(),
       imageUrl: imageUrl ?? null,
       reactions: {},
-      read: false,
+      //read: false,
       to: chatWithUserId,
+      readBy: { [currentUserId]: true },
     };
 
     try {
@@ -342,20 +384,18 @@ const ChatBox: FC<ChatBoxProps> = ({
               </div>
             )}
             {isGroup && (
-              // <button
-              //   onClick={() => setShowMembers(!showMembers)}
-              //   className="text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
-              // >
-              //   {groupMembers?.length} members
-              // </button>
               <div className="flex dark:border-gray-700">
                 <div className="flex items-center space-x-2">
-                  {/* <div className="font-bold text-gray-900 dark:text-gray-100">{profile?.username}</div> */}
                   <div
                     className="text-sm text-gray-500 dark:text-gray-400 cursor-pointer"
                     onClick={() => setShowMembers(prev => !prev)}
                   >
                     {groupMemberProfiles.length} members
+                    {unreadCount > 0 && (
+                      <span className="absolute -top-2 -right-4 bg-red-500 text-white text-xs font-bold rounded-full px-2">
+                        {unreadCount}
+                      </span>
+                    )}
                   </div>
                 </div>
 
@@ -378,36 +418,6 @@ const ChatBox: FC<ChatBoxProps> = ({
             )}
           </div>
         </div>
-        {/* <img src={profile.avatar || "/default-avatar.png"} alt={profile.username} className="w-10 h-10 rounded-full mr-3" />
-        <div>
-          <div className="font-bold text-gray-900 dark:text-gray-100">{profile.username}</div>
-          {!isGroup && (
-            <div className={`text-sm ${profile.online ? "text-green-500" : "text-gray-500"}`}>
-              {profile.online ? "Online" : "Offline"}
-            </div>
-          )}
-
-          {isGroup && groupMemberProfiles.length > 0 && (
-            <div className="flex flex-wrap mt-1 gap-2">
-              {groupMemberProfiles.map((member) => {
-                const online = userStatuses[member.id!] || false;
-                return (
-                  <div key={member.id} className="flex items-center space-x-1">
-                    <img
-                      src={member.avatar || `https://avatars.dicebear.com/api/identicon/${member.id}.svg`}
-                      alt={member.username}
-                      className="w-6 h-6 rounded-full"
-                    />
-                    <span
-                      className={`w-2 h-2 rounded-full ${online ? "bg-green-500" : "bg-gray-400"}`}
-                      title={online ? "Online" : "Offline"}
-                    />
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div> */}
       </div>
 
       {showMembers && (
@@ -447,21 +457,17 @@ const ChatBox: FC<ChatBoxProps> = ({
           const isSender = msg.senderId === currentUserId;
           const displayName = msg.senderName;
           const displayAvatar = msg.senderAvatar;
+          const unread = !msg.readBy?.[currentUserId] && !isSender;
 
           return (
             <div key={msg.id} className={`flex ${isSender ? "justify-end" : "justify-start"} items-end`}>
-              {/* <img
-                src={displayAvatar || `https://avatars.dicebear.com/api/identicon/${msg.senderId}.svg`}
-                alt={displayName}
-                className={`w-8 h-8 rounded-full ${isSender ? "ml-2" : "mr-2"}`}
-              /> */}
               <div className="relative">
                 <img
                   src={displayAvatar || `https://avatars.dicebear.com/api/identicon/${msg.senderId}.svg`}
                   alt={displayName}
                   className={`w-8 h-8 rounded-full ${isSender ? "ml-2" : "mr-2"}`}
                 />
-                {/* ✅ Online/offline dot */}
+                {/* Online/offline dot */}
                 {isGroup && !isSender && (
                   <span
                     className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-white ${
