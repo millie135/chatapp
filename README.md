@@ -125,4 +125,44 @@ service cloud.firestore {
     
     -->
 
-    
+
+
+<!-- 
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Users
+    match /users/{userId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth.uid == userId;
+    }
+
+    // Groups
+    match /groups/{groupId} {
+      allow read: if request.auth != null && (
+        request.auth.uid in resource.data.members || 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "Leader"
+      );
+
+      allow create: if request.auth != null &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "Leader";
+
+      allow update: if request.auth != null &&
+        (request.auth.uid in resource.data.members ||
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "Leader");
+    }
+
+    // 1-on-1 Chats
+    match /chats/{userId}/{chatId}/{messageId} {
+      allow read, write: if request.auth != null && (request.auth.uid == userId || request.auth.uid == chatId);
+    }
+
+    // Group Chats
+    match /groupChats/{groupId}/messages/{messageId} {
+      allow read, write: if request.auth != null &&
+        exists(/databases/$(database)/documents/groups/$(groupId)) &&
+        request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.members;
+    }
+  }
+} -->
