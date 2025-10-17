@@ -8,6 +8,7 @@ interface Props {
   onShowAddMemberModal: (show: boolean) => void;
   onShowCreateGroupModal: (show: boolean) => void;
   groupUnreadCounts?: { [groupId: string]: number }; // NEW
+  userRole: string; // NEW
 }
 
 export default function GroupList({
@@ -17,18 +18,21 @@ export default function GroupList({
   onShowAddMemberModal,
   onShowCreateGroupModal,
   groupUnreadCounts = {}, // NEW
+  userRole, // NEW
 }: Props) {
   return (
     <div className="mt-6">
       <h3 className="text-md font-semibold mb-2 text-gray-700 dark:text-gray-200">
         Groups
       </h3>
+      {userRole === "Leader" && (
       <button
         onClick={() => onShowCreateGroupModal(true)}
         className="text-sm bg-green-500 text-white px-2 py-1 rounded hover:bg-green-600"
       >
         + Create
       </button>
+      )}
       <div className="space-y-2">
         {groups.map((g) => (
           <div

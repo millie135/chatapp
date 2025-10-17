@@ -60,6 +60,7 @@ export default function Home() {
           username: userData?.username || u.email?.split("@")[0] || "User",
           avatar: userData?.avatar || `https://avatars.dicebear.com/api/identicon/${u.uid}.svg`,
           email: u.email || undefined,
+          role: userData?.role || "user", // <- Add this
         });
       } else setUser(null);
 
@@ -71,35 +72,103 @@ export default function Home() {
   // -------------------
   // Fetch Users & Groups
   // -------------------
+  // useEffect(() => {
+  //   if (!user) return;
+
+  //   // Users
+  //   const unsubUsers = onSnapshot(collection(db, "users"), (snapshot) => {
+  //     const allUsers = snapshot.docs
+  //       .filter((doc) => doc.id !== user.uid)
+  //       .map((doc) => ({
+  //         id: doc.id,
+  //         uid: doc.id,
+  //         username: doc.data().username,
+  //         email: doc.data().email,
+  //         avatar: doc.data().avatar,
+  //         role: doc.data().role,
+  //       }));
+  //     setUsers(allUsers);
+  //   });
+
+  //   // Groups
+  //   const unsubGroups = onSnapshot(collection(db, "groups"), (snapshot) => {
+  //     const unsubGroups = onSnapshot(
+  //       collection(db, "groups"),
+  //       (snapshot) => {
+  //         const allGroups = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() } as Group));
+
+  //         let visibleGroups: Group[] = allGroups;
+  //         if (user.role !== "Leader") {
+  //           // Only members see these groups
+  //           visibleGroups = allGroups.filter((g) => g.members?.includes(user.uid));
+  //         }
+
+  //         setGroups(visibleGroups);
+  //       },
+  //       (error) => {
+  //         console.error("Error fetching groups:", error);
+  //       }
+  //     );
+  //   });
+
+  //   return () => {
+  //     unsubUsers();
+  //     unsubGroups();
+  //   };
+  // }, [user]);
+
   useEffect(() => {
     if (!user) return;
 
     // Users
-    const unsubUsers = onSnapshot(collection(db, "users"), (snapshot) => {
-      const allUsers = snapshot.docs
-        .filter((doc) => doc.id !== user.uid)
-        .map((doc) => ({
-          id: doc.id,
-          uid: doc.id,
-          username: doc.data().username,
-          email: doc.data().email,
-          avatar: doc.data().avatar,
-          role: doc.data().role,
-        }));
-      setUsers(allUsers);
-    });
+    const unsubUsers = onSnapshot(
+      collection(db, "users"),
+      (snapshot) => {
+        const allUsers = snapshot.docs
+          .filter((doc) => doc.id !== user.uid)
+          .map((doc) => ({
+            id: doc.id,
+            uid: doc.id,
+            username: doc.data().username,
+            email: doc.data().email,
+            avatar: doc.data().avatar,
+            role: doc.data().role,
+          }));
+        setUsers(allUsers);
+      },
+      (error) => console.error("Error fetching users:", error)
+    );
 
     // Groups
-    const unsubGroups = onSnapshot(collection(db, "groups"), (snapshot) => {
-      const userGroups = snapshot.docs
-        .map((doc) => ({ id: doc.id, ...doc.data() } as Group))
-        .filter((g) => g.members?.includes(user.uid));
-      setGroups(userGroups);
-    });
+    let unsubGroups: () => void;
+    const groupsRef = collection(db, "groups");
+
+    if (user.role === "Leader") {
+      // Leaders can see all groups
+      unsubGroups = onSnapshot(
+        groupsRef,
+        (snapshot) => {
+          const allGroups = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() } as Group));
+          setGroups(allGroups);
+        },
+        (error) => console.error("Error fetching groups:", error)
+      );
+    } else {
+      // Normal users: only groups where they are members
+      const q = query(groupsRef, where("members", "array-contains", user.uid));
+      unsubGroups = onSnapshot(
+        q,
+        (snapshot) => {
+          const userGroups = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() } as Group));
+          setGroups(userGroups);
+        },
+        (error) => console.error("Error fetching groups:", error)
+      );
+    }
 
     return () => {
       unsubUsers();
-      unsubGroups();
+      unsubGroups && unsubGroups();
     };
   }, [user]);
 
@@ -270,7 +339,8 @@ export default function Home() {
   };
 
   const handleCreateGroupSubmit = async (groupName: string, avatar: string) => {
-    if (!user || !groupName.trim()) return;
+    if (!user || user.role !== "Leader") return alert("Only leaders can create groups");
+    if (!groupName.trim()) return;
     try {
       await addDoc(collection(db, "groups"), {
         name: groupName.trim(),
@@ -340,6 +410,7 @@ export default function Home() {
           onShowAddMemberModal={(show) => setShowAddMemberModal(show)}
           onShowCreateGroupModal={(show) => setShowCreateGroupModal(show)}
           groupUnreadCounts={unreadCounts}
+          userRole={user?.role || ""}
         />
       </div>
 

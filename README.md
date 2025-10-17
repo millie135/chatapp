@@ -99,3 +99,30 @@ service cloud.firestore {
     }
   }
 } -->
+
+
+
+<!-- // Groups
+    match /groups/{groupId} {
+      allow read, write: if request.auth != null;
+    }
+
+    // 1-on-1 chats
+    match /chats/{userId}/{chatId}/{messageId} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Group chat messages
+    match /groupChats/{groupId}/messages/{messageId} {
+      allow read, write: if request.auth != null;
+    } 
+
+    // Users
+    match /users/{userId} {
+      allow read, write: if request.auth != null;
+    }
+    
+    
+    -->
+
+    
