@@ -8,7 +8,7 @@ interface Props {
   onShowAddMemberModal: (show: boolean) => void;
   onShowCreateGroupModal: (show: boolean) => void;
   groupUnreadCounts?: { [groupId: string]: number }; // NEW
-  userRole: string; // NEW
+  userRole: string; 
 }
 
 export default function GroupList({
@@ -17,8 +17,8 @@ export default function GroupList({
   onOpenAddMember,
   onShowAddMemberModal,
   onShowCreateGroupModal,
-  groupUnreadCounts = {}, // NEW
-  userRole, // NEW
+  groupUnreadCounts = {}, 
+  userRole, 
 }: Props) {
   return (
     <div className="mt-6">
