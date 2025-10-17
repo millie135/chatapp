@@ -36,7 +36,6 @@ interface Message {
   reactions?: Record<string, string>;
   to: string;
   read: boolean;
-  //createdAt: any;
 }
 
 interface Props {
@@ -333,6 +332,15 @@ const ChatBox: FC<ChatBoxProps> = ({
           <img src={profile.avatar || "/default-avatar.png"} alt={profile.username} className="w-10 h-10 rounded-full mr-3" />
           <div>
             <div className="font-bold text-gray-900 dark:text-gray-100">{profile.username}</div>
+            {!isGroup && (
+              <div
+                className={`text-sm ${
+                  profile.online ? "text-green-500" : "text-gray-500"
+                }`}
+              >
+                {profile.online ? "Online" : "Offline"}
+              </div>
+            )}
             {isGroup && (
               // <button
               //   onClick={() => setShowMembers(!showMembers)}
