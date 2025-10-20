@@ -59,7 +59,6 @@ export default function Home() {
         setLoading(false);
         return;
       }
-
       
 
       try {
@@ -362,25 +361,25 @@ export default function Home() {
   try {
     isManualLogout.current = true; // set before updating anything
 
-    // 1️⃣ Set offline in RTDB
+    // Set offline in RTDB
     const statusRef = ref(rtdb, `/status/${user.uid}`);
     await rtdbSet(statusRef, false);
 
-    // 2️⃣ Clear sessionId and lastSeen in Firestore
+    // Clear sessionId and lastSeen in Firestore
     const userRef = doc(db, "users", user.uid);
     await updateDoc(userRef, {
       sessionId: null,
       lastSeen: serverTimestamp(),
     });
 
-    // 3️⃣ Clear local storage
+    // Clear local storage
     localStorage.removeItem("sessionId");
     sessionIdRef.current = null;
 
-    // 4️⃣ Sign out from Firebase Auth
+    // Sign out from Firebase Auth
     await auth.signOut();
 
-    // 5️⃣ Reset manual logout flag
+    // Reset manual logout flag
     isManualLogout.current = false;
 
     // Optional: clear user state immediately
