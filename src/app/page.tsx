@@ -25,6 +25,7 @@ import {
   getDocs,
   arrayUnion,
   addDoc,
+  runTransaction,
 } from "firebase/firestore";
 import { ref, set as rtdbSet, onDisconnect, onValue } from "firebase/database";
 
@@ -44,83 +45,137 @@ export default function Home() {
   const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
   const [newGroupName, setNewGroupName] = useState("");
 
+  const notificationAudio = useRef<HTMLAudioElement | null>(null);
+  const unsubscribersRef = useRef<(() => void)[]>([]);
+  const sessionIdRef = useRef<string | null>(null);
+
   // -------------------
-  // Firebase: Auth State
+  // Firebase: Auth State + Single Session
   // -------------------
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged(async (u) => {
-      if (u) {
+      if (!u) {
+        setUser(null);
+        setLoading(false);
+        return;
+      }
+
+      
+
+      try {
+        // await runTransaction(db, async (transaction) => {
+        //   const userSnap = await transaction.get(userRef);
+        //   if (!userSnap.exists()) throw new Error("User not found");
+        //   const data = userSnap.data();
+
+        //   let localSessionId = localStorage.getItem("sessionId");
+        //   if (!localSessionId) {
+        //     localSessionId = crypto.randomUUID();
+        //     localStorage.setItem("sessionId", localSessionId);
+        //   }
+
+        //   // Block login if another device exists
+        //   if (data?.sessionId && data.sessionId !== "" && data.sessionId !== localSessionId) {
+        //     throw new Error("Your account is already logged in on another device.");
+        //   }
+
+        //   // Atomically set sessionId
+        //   transaction.update(userRef, { sessionId: localSessionId });
+        //   sessionIdRef.current = localSessionId;
+        // });
         const userRef = doc(db, "users", u.uid);
+        await runTransaction(db, async (transaction) => {
+          const userSnap = await transaction.get(userRef);
+
+          let localSessionId = localStorage.getItem("sessionId");
+          if (!localSessionId) {
+            localSessionId = crypto.randomUUID();
+            localStorage.setItem("sessionId", localSessionId);
+          }
+
+          // If user exists
+          if (userSnap.exists()) {
+            const data = userSnap.data();
+            // Block login if another device exists
+            if (data?.sessionId && data.sessionId !== "" && data.sessionId !== localSessionId) {
+              throw new Error("Your account is already logged in on another device.");
+            }
+            // Atomically set sessionId
+            transaction.update(userRef, { sessionId: localSessionId });
+          } else {
+            // New user: create document
+            transaction.set(userRef, { sessionId: localSessionId, createdAt: serverTimestamp() });
+          }
+
+          sessionIdRef.current = localSessionId;
+        });
+
+        // -------------------
+        // Get custom claims for role
+        // -------------------
+        const tokenResult = await u.getIdTokenResult();
+        const roleFromToken = (tokenResult.claims.role as string) || "user";
+
         const userSnap = await getDoc(userRef);
-        const userData = userSnap.data();
+        const data = userSnap.data();
 
         setUser({
           id: u.uid,
           uid: u.uid,
-          username: userData?.username || u.email?.split("@")[0] || "User",
-          avatar: userData?.avatar || `https://avatars.dicebear.com/api/identicon/${u.uid}.svg`,
-          email: u.email || undefined,
-          role: userData?.role || "user", // <- Add this
+          username: data?.username || u.email?.split("@")[0] || "User",
+          avatar: data?.avatar || `https://avatars.dicebear.com/api/identicon/${u.uid}.svg`,
+          email: data?.email || undefined,
+          role: data?.role || "user",
+          //role: roleFromToken,
         });
-      } else setUser(null);
+      } catch (err: any) {
+        alert(err.message);
+        await auth.signOut();
+        setUser(null);
+      }
 
       setLoading(false);
     });
+
     return () => unsubscribe();
   }, []);
 
   // -------------------
+  // Real-time logout if sessionId changes
+  // -------------------
+  useEffect(() => {
+  if (!user) return;
+
+  const userRef = doc(db, "users", user.uid);
+  const unsubscribe = onSnapshot(userRef, (snap) => {
+    const data = snap.data();
+    if (!data) return;
+
+    // Only trigger if sessionId changed AND user is not manually logging out
+    if (data.sessionId && data.sessionId !== sessionIdRef.current) {
+      if (!isManualLogout.current) {
+        alert(
+          "You have been logged out because your account was signed in on another device."
+        );
+      }
+      auth.signOut();
+      localStorage.removeItem("sessionId");
+      sessionIdRef.current = null;
+      setUser(null);
+    }
+  });
+
+  return () => unsubscribe();
+}, [user]);
+
+
+
+  // -------------------
   // Fetch Users & Groups
   // -------------------
-  // useEffect(() => {
-  //   if (!user) return;
-
-  //   // Users
-  //   const unsubUsers = onSnapshot(collection(db, "users"), (snapshot) => {
-  //     const allUsers = snapshot.docs
-  //       .filter((doc) => doc.id !== user.uid)
-  //       .map((doc) => ({
-  //         id: doc.id,
-  //         uid: doc.id,
-  //         username: doc.data().username,
-  //         email: doc.data().email,
-  //         avatar: doc.data().avatar,
-  //         role: doc.data().role,
-  //       }));
-  //     setUsers(allUsers);
-  //   });
-
-  //   // Groups
-  //   const unsubGroups = onSnapshot(collection(db, "groups"), (snapshot) => {
-  //     const unsubGroups = onSnapshot(
-  //       collection(db, "groups"),
-  //       (snapshot) => {
-  //         const allGroups = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() } as Group));
-
-  //         let visibleGroups: Group[] = allGroups;
-  //         if (user.role !== "Leader") {
-  //           // Only members see these groups
-  //           visibleGroups = allGroups.filter((g) => g.members?.includes(user.uid));
-  //         }
-
-  //         setGroups(visibleGroups);
-  //       },
-  //       (error) => {
-  //         console.error("Error fetching groups:", error);
-  //       }
-  //     );
-  //   });
-
-  //   return () => {
-  //     unsubUsers();
-  //     unsubGroups();
-  //   };
-  // }, [user]);
-
   useEffect(() => {
     if (!user) return;
 
-    // Users
     const unsubUsers = onSnapshot(
       collection(db, "users"),
       (snapshot) => {
@@ -139,12 +194,10 @@ export default function Home() {
       (error) => console.error("Error fetching users:", error)
     );
 
-    // Groups
     let unsubGroups: () => void;
     const groupsRef = collection(db, "groups");
 
     if (user.role === "Leader") {
-      // Leaders can see all groups
       unsubGroups = onSnapshot(
         groupsRef,
         (snapshot) => {
@@ -154,7 +207,6 @@ export default function Home() {
         (error) => console.error("Error fetching groups:", error)
       );
     } else {
-      // Normal users: only groups where they are members
       const q = query(groupsRef, where("members", "array-contains", user.uid));
       unsubGroups = onSnapshot(
         q,
@@ -231,29 +283,34 @@ export default function Home() {
     if (!user || !users.length) return;
     const unsubscribers: (() => void)[] = [];
 
-    // 1-on-1 chat unread
     users.forEach((u) => {
       const messagesRef = collection(db, "chats", user.uid, u.id);
       const q = query(messagesRef, orderBy("timestamp", "desc"));
 
-      const unsubscribe = onSnapshot(q, (snapshot) => {
-        const unreadCount = snapshot.docs.filter(
+      const unsubscribe = onSnapshot(q, async (snapshot) => {
+        const unreadDocs = snapshot.docs.filter(
           (doc) => doc.data().senderId === u.id && !doc.data().read
-        ).length;
+        );
+
+        if (chatUser?.id === u.id && unreadDocs.length > 0) {
+          const updates = unreadDocs.map((docSnap) => updateDoc(docSnap.ref, { read: true }));
+          await Promise.all(updates);
+        }
+
+        const unreadCount = chatUser?.id === u.id ? 0 : unreadDocs.length;
 
         setUnreadCounts((prev) => ({ ...prev, [u.id]: unreadCount }));
 
         if (unreadCount > (prevUnreadCounts.current[u.id] || 0) && chatUser?.id !== u.id) {
-          const audio = new Audio("/notify.mp3");
-          audio.play().catch(() => {});
+          notificationAudio.current?.play().catch(() => {});
         }
         prevUnreadCounts.current[u.id] = unreadCount;
       });
 
       unsubscribers.push(unsubscribe);
+      unsubscribersRef.current.push(unsubscribe);
     });
 
-    // Group unread
     groups.forEach((g) => {
       const messagesRef = collection(db, "groupChats", g.id, "messages");
       const q = query(messagesRef, orderBy("timestamp", "desc"));
@@ -262,9 +319,7 @@ export default function Home() {
         let unreadCount = 0;
         snapshot.docs.forEach((doc) => {
           const msg = doc.data() as any;
-          if (!msg.readBy?.[user.uid] && msg.senderId !== user.uid) {
-            unreadCount += 1;
-          }
+          if (!msg.readBy?.[user.uid] && msg.senderId !== user.uid) unreadCount += 1;
         });
 
         setUnreadCounts((prev) => ({ ...prev, [g.id]: unreadCount }));
@@ -306,26 +361,56 @@ export default function Home() {
       avatar: g.avatar || `https://avatars.dicebear.com/api/identicon/${g.id}.svg`,
     });
 
-    // Mark unread group messages as read
     const messagesRef = collection(db, "groupChats", g.id, "messages");
     const q = query(messagesRef, where(`readBy.${user!.uid}`, "==", false));
     const snapshot = await getDocs(q);
-    const updates = snapshot.docs.map((docSnap) => {
-      return updateDoc(docSnap.ref, { [`readBy.${user!.uid}`]: true });
-    });
+    const updates = snapshot.docs.map((docSnap) =>
+      updateDoc(docSnap.ref, { [`readBy.${user!.uid}`]: true })
+    );
     await Promise.all(updates);
 
     setUnreadCounts((prev) => ({ ...prev, [g.id]: 0 }));
-
   };
+
+  const isManualLogout = useRef(false);
+
 
   const handleSignOut = async () => {
-    if (!user) return;
+  if (!user) return;
+
+  try {
+    isManualLogout.current = true; // set before updating anything
+
+    // 1️⃣ Set offline in RTDB
     const statusRef = ref(rtdb, `/status/${user.uid}`);
     await rtdbSet(statusRef, false);
-    await updateDoc(doc(db, "users", user.uid), { lastSeen: serverTimestamp() });
+
+    // 2️⃣ Clear sessionId and lastSeen in Firestore
+    const userRef = doc(db, "users", user.uid);
+    await updateDoc(userRef, {
+      sessionId: null,
+      lastSeen: serverTimestamp(),
+    });
+
+    // 3️⃣ Clear local storage
+    localStorage.removeItem("sessionId");
+    sessionIdRef.current = null;
+
+    // 4️⃣ Sign out from Firebase Auth
     await auth.signOut();
-  };
+
+    // 5️⃣ Reset manual logout flag
+    isManualLogout.current = false;
+
+    // Optional: clear user state immediately
+    setUser(null);
+  } catch (err) {
+    console.error("Error signing out:", err);
+  }
+};
+
+
+
 
   const handleAddMember = async (memberId: string) => {
     if (!selectedGroup) return;
@@ -453,4 +538,3 @@ export default function Home() {
     </div>
   );
 }
-

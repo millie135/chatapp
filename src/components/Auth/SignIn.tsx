@@ -1,8 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { auth } from "@/firebaseConfig";
+import { auth, db } from "@/firebaseConfig";
 import { signInWithEmailAndPassword } from "firebase/auth";
+import { doc, getDoc, updateDoc, serverTimestamp } from "firebase/firestore";
+import { v4 as uuidv4 } from "uuid";
 
 export default function SignIn() {
   const [email, setEmail] = useState("");
@@ -12,8 +14,34 @@ export default function SignIn() {
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+
     try {
-      await signInWithEmailAndPassword(auth, email, password);
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
+      const userRef = doc(db, "users", user.uid);
+      const userSnap = await getDoc(userRef);
+
+      if (!userSnap.exists()) throw new Error("User not found in database");
+      const data = userSnap.data();
+
+      // 1️⃣ Create local session
+      let localSessionId = localStorage.getItem("sessionId");
+      if (!localSessionId) {
+        localSessionId = uuidv4();
+        localStorage.setItem("sessionId", localSessionId);
+      }
+
+      // 2️⃣ Block login if another session exists
+      if (data?.sessionId && data.sessionId !== localSessionId) {
+        await auth.signOut();
+        setError("Your account is already logged in on another device.");
+        return;
+      }
+
+      // 3️⃣ Update Firestore session
+      await updateDoc(userRef, { sessionId: localSessionId, lastSeen: serverTimestamp() });
+      sessionStorage.setItem("sessionId", localSessionId);
+
     } catch (err: any) {
       setError(err.message);
     }
@@ -28,7 +56,7 @@ export default function SignIn() {
           type="email"
           placeholder="Email"
           value={email}
-          onChange={e => setEmail(e.target.value)}
+          onChange={(e) => setEmail(e.target.value)}
           className="w-full p-2 border border-gray-300 rounded"
           required
         />
@@ -36,14 +64,10 @@ export default function SignIn() {
           type="password"
           placeholder="Password"
           value={password}
-          onChange={e => setPassword(e.target.value)}
+          onChange={(e) => setPassword(e.target.value)}
           className="w-full p-2 border border-gray-300 rounded"
           required
         />
-        <label className="flex items-center space-x-2">
-          <input type="checkbox" />
-          <span>Remember me</span>
-        </label>
         <button
           type="submit"
           className="w-full bg-green-600 text-white py-2 rounded hover:bg-green-700 transition"
