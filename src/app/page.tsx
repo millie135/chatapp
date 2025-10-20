@@ -63,26 +63,7 @@ export default function Home() {
       
 
       try {
-        // await runTransaction(db, async (transaction) => {
-        //   const userSnap = await transaction.get(userRef);
-        //   if (!userSnap.exists()) throw new Error("User not found");
-        //   const data = userSnap.data();
-
-        //   let localSessionId = localStorage.getItem("sessionId");
-        //   if (!localSessionId) {
-        //     localSessionId = crypto.randomUUID();
-        //     localStorage.setItem("sessionId", localSessionId);
-        //   }
-
-        //   // Block login if another device exists
-        //   if (data?.sessionId && data.sessionId !== "" && data.sessionId !== localSessionId) {
-        //     throw new Error("Your account is already logged in on another device.");
-        //   }
-
-        //   // Atomically set sessionId
-        //   transaction.update(userRef, { sessionId: localSessionId });
-        //   sessionIdRef.current = localSessionId;
-        // });
+        
         const userRef = doc(db, "users", u.uid);
         await runTransaction(db, async (transaction) => {
           const userSnap = await transaction.get(userRef);

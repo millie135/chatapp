@@ -166,3 +166,69 @@ service cloud.firestore {
     }
   }
 } -->
+
+
+
+<!-- rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // -----------------
+    // Users Collection
+    // -----------------
+    match /users/{userId} {
+      // Anyone logged in can read basic info
+      allow read: if request.auth != null;
+
+      // Users can write only their own document
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // -----------------
+    // Groups Collection
+    // -----------------
+    match /groups/{groupId} {
+
+      // Read rules
+      allow read: if request.auth != null &&
+                  (
+                    request.auth.uid in resource.data.members ||       // Members can read their groups
+                    get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "Leader"  // Leaders can read all
+                  );
+
+      // Create rules
+      allow create: if request.auth != null &&
+                    get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "Leader";
+
+      // Update rules
+      allow update: if request.auth != null &&
+                    (
+                      request.auth.uid in resource.data.members || 
+                      get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "Leader"
+                    );
+
+      // Delete rules
+      allow delete: if request.auth != null &&
+                    get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "Leader";
+    }
+
+    // -----------------
+    // Chat Messages (one-to-one)
+    // -----------------
+    match /chats/{userId}/{otherUserId}/{messageId} {
+      allow read, write: if request.auth != null
+                        && (request.auth.uid == userId || request.auth.uid == otherUserId);
+    }
+
+    // -----------------
+    // Group Chat Messages
+    // -----------------
+    match /groupChats/{groupId}/messages/{messageId} {
+      allow read, write: if request.auth != null
+                        && (
+                             request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.members ||
+                             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "Leader"
+                           );
+    }
+  }
+} -->
