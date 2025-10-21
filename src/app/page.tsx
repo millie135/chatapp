@@ -478,7 +478,7 @@ export default function Home() {
   return (
     <div className="flex min-h-screen bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-100">
       {/* === Left Sidebar === */}
-      <aside className="w-full md:w-1/4 border-r border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex flex-col">
+      <aside className="flex-[2] border-r border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex flex-col">
         {/* Profile + Sign out */}
         <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
           <div className="flex items-center space-x-3">
@@ -600,7 +600,7 @@ export default function Home() {
       </aside>
 
       {/* === Chat Area === */}
-      <main className="flex-1 flex flex-col border-r border-gray-200 dark:border-gray-700">
+      <main className="flex-[4] flex flex-col border-r border-gray-200 dark:border-gray-700">
         {chatUser ? (
           <ChatBox
             key={chatUser.id}
@@ -618,7 +618,7 @@ export default function Home() {
       </main>
 
       {/* === Right Sidebar (free space) === */}
-      <aside className="hidden md:block w-1/4 bg-gray-50 dark:bg-gray-900 p-4">
+      <aside className="hidden md:flex flex-[5] bg-gray-50 dark:bg-gray-900 p-4">
         {/* This space is reserved for future features */}
       </aside>
 
