@@ -1,21 +1,32 @@
 import { Dispatch, SetStateAction } from "react";
 import { Group, UserType } from "@/types";
 
+// interface Props {
+//   groups: Group[];
+//   onSelectGroup: (g: Group) => void;
+//   onOpenAddMember: (group: Group) => void;
+//   onShowAddMemberModal: (show: boolean) => void;
+//   onShowCreateGroupModal: (show: boolean) => void;
+//   groupUnreadCounts?: { [groupId: string]: number }; // NEW
+//   userRole: string; 
+// }
+
 interface Props {
   groups: Group[];
   onSelectGroup: (g: Group) => void;
-  onOpenAddMember: (group: Group) => void;
-  onShowAddMemberModal: (show: boolean) => void;
+  onOpenManageMembers: (group: Group) => void; // ← renamed
   onShowCreateGroupModal: (show: boolean) => void;
-  groupUnreadCounts?: { [groupId: string]: number }; // NEW
-  userRole: string; 
+  groupUnreadCounts?: { [groupId: string]: number };
+  userRole: string;
 }
+
 
 export default function GroupList({
   groups,
   onSelectGroup,
-  onOpenAddMember,
-  onShowAddMemberModal,
+  //onOpenAddMember,
+  //onShowAddMemberModal,
+  onOpenManageMembers,
   onShowCreateGroupModal,
   groupUnreadCounts = {}, 
   userRole, 
@@ -57,7 +68,7 @@ export default function GroupList({
               )}
             </button>
 
-            <button
+            {/* <button
               className="text-sm bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600"
               onClick={() => {
                 onOpenAddMember(g);
@@ -65,7 +76,15 @@ export default function GroupList({
               }}
             >
               + Member
+            </button> */}
+
+            <button
+              className="text-sm bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600"
+              onClick={() => onOpenManageMembers(g)}
+            >
+              Manage
             </button>
+
           </div>
         ))}
       </div>

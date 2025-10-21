@@ -1,0 +1,775 @@
+"use client";
+
+import { useState, useEffect, useRef } from "react";
+import SignUp from "@/components/Auth/SignUp";
+import SignIn from "@/components/Auth/SignIn";
+import ChatBox from "@/components/Chat/ChatBox";
+import ManageMembersSidebar from "@/components/Chat/ManageMembersSidebar";
+import AddMemberModal from "@/components/Modals/AddMemberModal";
+import CreateGroupModal from "@/components/Modals/CreateGroupModal";
+
+import { UserType, Group } from "@/types";
+import { auth, db, rtdb } from "@/firebaseConfig";
+import {
+  collection,
+  onSnapshot,
+  query,
+  orderBy,
+  getDoc,
+  doc,
+  setDoc,
+  serverTimestamp,
+  updateDoc,
+  where,
+  getDocs,
+  arrayUnion,
+  addDoc,
+  runTransaction,
+  QuerySnapshot,
+  DocumentData 
+} from "firebase/firestore";
+import { ref, set as rtdbSet, onDisconnect, onValue } from "firebase/database";
+
+export default function Home() {
+  const [showSignUp, setShowSignUp] = useState(true);
+  const [user, setUser] = useState<UserType | null>(null);
+  const [users, setUsers] = useState<UserType[]>([]);
+  const [chatUser, setChatUser] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [userStatuses, setUserStatuses] = useState<{ [key: string]: boolean }>({});
+  const [unreadCounts, setUnreadCounts] = useState<{ [key: string]: number }>({});
+  const prevUnreadCounts = useRef<{ [key: string]: number }>({});
+  const [groups, setGroups] = useState<Group[]>([]);
+
+  const [showAddMemberModal, setShowAddMemberModal] = useState(false);
+  const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
+  const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
+  const [newGroupName, setNewGroupName] = useState("");
+
+  const notificationAudio = useRef<HTMLAudioElement | null>(null);
+  const unsubscribersRef = useRef<(() => void)[]>([]);
+  const sessionIdRef = useRef<string | null>(null);
+  const [showManageMembers, setShowManageMembers] = useState(false);
+  const isManualLogout = useRef(false);
+
+  // -------------------
+  // Firebase: Auth State + Single Session
+  // -------------------
+  useEffect(() => {
+    const unsubscribe = auth.onAuthStateChanged(async (u) => {
+      if (!u) {
+        setUser(null);
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const userRef = doc(db, "users", u.uid);
+        await runTransaction(db, async (transaction) => {
+          const userSnap = await transaction.get(userRef);
+
+          let localSessionId = localStorage.getItem("sessionId");
+          if (!localSessionId) {
+            localSessionId = crypto.randomUUID();
+            localStorage.setItem("sessionId", localSessionId);
+          }
+
+          if (userSnap.exists()) {
+            const data = userSnap.data();
+            if (data?.sessionId && data.sessionId !== "" && data.sessionId !== localSessionId) {
+              throw new Error("Your account is already logged in on another device.");
+            }
+            transaction.update(userRef, { sessionId: localSessionId });
+          } else {
+            transaction.set(userRef, { sessionId: localSessionId, createdAt: serverTimestamp() });
+          }
+
+          sessionIdRef.current = localSessionId;
+        });
+
+        const tokenResult = await u.getIdTokenResult();
+        const roleFromToken = (tokenResult.claims.role as string) || "user";
+
+        const userSnap = await getDoc(doc(db, "users", u.uid));
+        const data = userSnap.data();
+
+        setUser({
+          id: u.uid,
+          uid: u.uid,
+          username: data?.username || u.email?.split("@")[0] || "User",
+          avatar: data?.avatar || `https://avatars.dicebear.com/api/identicon/${u.uid}.svg`,
+          email: data?.email || undefined,
+          role: data?.role || "user",
+        });
+      } catch (err: any) {
+        alert(err.message);
+        await auth.signOut();
+        setUser(null);
+      }
+
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // -------------------
+  // Real-time logout if sessionId changes
+  // -------------------
+  useEffect(() => {
+    if (!user) return;
+
+    const userRef = doc(db, "users", user.uid);
+    const unsubscribe = onSnapshot(userRef, (snap) => {
+      const data = snap.data();
+      if (!data) return;
+
+      if (data.sessionId && data.sessionId !== sessionIdRef.current) {
+        if (!isManualLogout.current) {
+          alert("You have been logged out because your account was signed in on another device.");
+        }
+        auth.signOut();
+        localStorage.removeItem("sessionId");
+        sessionIdRef.current = null;
+        setUser(null);
+      }
+    });
+
+    return () => unsubscribe();
+  }, [user]);
+
+  // -------------------
+  // Fetch Users & Groups
+  // -------------------
+  // useEffect(() => {
+  //   if (!user) return;
+
+  //   const unsubUsers = onSnapshot(
+  //     collection(db, "users"),
+  //     (snapshot) => {
+  //       const allUsers = snapshot.docs
+  //         .filter((doc) => doc.id !== user.uid)
+  //         .map((doc) => ({
+  //           id: doc.id,
+  //           uid: doc.id,
+  //           username: doc.data().username,
+  //           email: doc.data().email,
+  //           avatar: doc.data().avatar,
+  //           role: doc.data().role,
+  //         }));
+  //       setUsers(allUsers);
+  //     },
+  //     (error) => console.error("Error fetching users:", error)
+  //   );
+
+  //   let unsubGroups: () => void;
+  //   const groupsRef = collection(db, "groups");
+
+  //   if (user.role === "Leader") {
+  //     unsubGroups = onSnapshot(
+  //       groupsRef,
+  //       (snapshot) => {
+  //         const allGroups = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() } as Group));
+  //         setGroups(allGroups);
+  //       },
+  //       (error) => console.error("Error fetching groups:", error)
+  //     );
+
+  //   } else {
+  //     const q = query(groupsRef, where("members", "array-contains", user.uid));
+  //     unsubGroups = onSnapshot(
+  //       q,
+  //       (snapshot) => {
+  //         const userGroups = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() } as Group));
+  //         setGroups(userGroups);
+  //         // Deselect chat if user was removed from the group
+  //         if (chatUser?.isGroup && !userGroups.find((g) => g.id === chatUser.id)) {
+  //           setChatUser(null);
+  //         }
+  //       },
+  //       //(error) => console.error("Error fetching groups:", error)
+  //       (error) => {
+  //         if (error.code === "permission-denied") {
+  //           console.warn(
+  //             "Access denied to some group(s). They may have removed you. Updating state..."
+  //           );
+  //           setGroups((prev) =>
+  //             prev.filter((g) => g.members?.includes(user.uid))
+  //           );
+
+  //           if (chatUser?.isGroup && !groups.find((g) => g.id === chatUser.id)) {
+  //             setChatUser(null);
+  //           }
+  //         } else {
+  //           console.error("Error fetching groups:", error);
+  //         }
+  //       }
+  //     );
+  //   }
+
+  //   return () => {
+  //     unsubUsers();
+  //     unsubGroups && unsubGroups();
+  //   };
+  // }, [user, chatUser]);
+
+  // -------------------
+// Fetch Users & Groups
+// -------------------
+  useEffect(() => {
+    if (!user) return;
+
+    // --- Users ---
+    const unsubUsers = onSnapshot(
+      collection(db, "users"),
+      (snapshot) => {
+        const allUsers = snapshot.docs
+          .filter((doc) => doc.id !== user.uid)
+          .map((doc) => ({
+            id: doc.id,
+            uid: doc.id,
+            username: doc.data().username,
+            email: doc.data().email,
+            avatar: doc.data().avatar,
+            role: doc.data().role,
+          }));
+        setUsers(allUsers);
+      },
+      (error) => console.error("Error fetching users:", error)
+    );
+
+    // --- Groups ---
+    const groupsRef = collection(db, "groups");
+    let unsubGroups: () => void;
+
+    const subscribeGroups = (queryRef: any) => {
+      return onSnapshot(
+        queryRef,
+        (snapshot: QuerySnapshot<DocumentData>) => {
+          const userGroups = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() } as Group));
+
+          // Remove groups the user lost access to
+          const accessibleGroups = user.role === "Leader"
+            ? userGroups
+            : userGroups.filter((g) => g.members?.includes(user.uid));
+
+          setGroups(accessibleGroups);
+
+          // Deselect chat if user was removed from the currently open group
+          if (chatUser?.isGroup && !accessibleGroups.find((g) => g.id === chatUser.id)) {
+            setChatUser(null);
+          }
+        },
+        (error: any) => {
+          if (error.code === "permission-denied") {
+            // setGroups((prev) => {
+            //   prev.filter((g) => g.members?.includes(user.uid))
+            // });
+            //setGroups((prev) => prev.filter((g) => g.members?.includes(user.uid)));
+
+            setGroups((prev) => {
+              const filtered = prev.filter((g) => g.members?.includes(user.uid));
+              
+              // Deselect chat if current chat is no longer accessible
+              if (chatUser?.isGroup && !filtered.find((g) => g.id === chatUser.id)) {
+                setChatUser(null);
+              }
+
+              return filtered;
+            });
+          } else {
+            console.error("Error fetching groups:", error);
+          }
+        }
+
+      );
+    };
+
+    if (user.role === "Leader") {
+      unsubGroups = subscribeGroups(groupsRef);
+    } else {
+      const q = query(groupsRef, where("members", "array-contains", user.uid));
+      unsubGroups = subscribeGroups(q);
+    }
+
+    return () => {
+      unsubUsers();
+      unsubGroups && unsubGroups();
+    };
+  }, [user, chatUser]);
+
+
+  // -------------------
+  // Track Online Status
+  // -------------------
+  useEffect(() => {
+    if (!user) return;
+
+    const connectedRef = ref(rtdb, ".info/connected");
+    const userStatusRef = ref(rtdb, `/status/${user.uid}`);
+
+    const updateUserProfile = async () => {
+      const userRef = doc(db, "users", user.uid);
+      const userSnap = await getDoc(userRef);
+      const userData = userSnap.data();
+
+      await setDoc(
+        userRef,
+        {
+          email: user.email,
+          username: userData?.username || user.username,
+          avatar: userData?.avatar || user.avatar,
+        },
+        { merge: true }
+      );
+    };
+    updateUserProfile();
+
+    const unsubscribe = onValue(connectedRef, (snap) => {
+      if (!snap.val()) return;
+      onDisconnect(userStatusRef).set(false).then(() => rtdbSet(userStatusRef, true));
+    });
+
+    return () => unsubscribe();
+  }, [user]);
+
+  // -------------------
+  // Track Other Users' Online Status
+  // -------------------
+  useEffect(() => {
+    if (!users.length) return;
+    const unsubscribers: (() => void)[] = [];
+
+    users.forEach((u) => {
+      const statusRef = ref(rtdb, `/status/${u.id}`);
+      const unsubscribe = onValue(statusRef, (snap) => {
+        setUserStatuses((prev) => ({ ...prev, [u.id]: snap.val() === true }));
+      });
+      unsubscribers.push(unsubscribe);
+    });
+
+    return () => unsubscribers.forEach((fn) => fn());
+  }, [users]);
+
+  // -------------------
+  // Track Unread Messages
+  // -------------------
+  useEffect(() => {
+    if (!user || !users.length) return;
+    const unsubscribers: (() => void)[] = [];
+
+    users.forEach((u) => {
+      const messagesRef = collection(db, "chats", user.uid, u.id);
+      const q = query(messagesRef, orderBy("timestamp", "desc"));
+
+      const unsubscribe = onSnapshot(q, async (snapshot) => {
+        const unreadDocs = snapshot.docs.filter(
+          (doc) => doc.data().senderId === u.id && !doc.data().read
+        );
+
+        if (chatUser?.id === u.id && unreadDocs.length > 0) {
+          const updates = unreadDocs.map((docSnap) => updateDoc(docSnap.ref, { read: true }));
+          await Promise.all(updates);
+        }
+
+        const unreadCount = chatUser?.id === u.id ? 0 : unreadDocs.length;
+
+        setUnreadCounts((prev) => ({ ...prev, [u.id]: unreadCount }));
+
+        if (unreadCount > (prevUnreadCounts.current[u.id] || 0) && chatUser?.id !== u.id) {
+          notificationAudio.current?.play().catch(() => {});
+        }
+        prevUnreadCounts.current[u.id] = unreadCount;
+      });
+
+      unsubscribers.push(unsubscribe);
+      unsubscribersRef.current.push(unsubscribe);
+    });
+
+    groups.forEach((g) => {
+      if (!g.members?.includes(user.uid)) return; 
+      const messagesRef = collection(db, "groupChats", g.id, "messages");
+      const q = query(messagesRef, orderBy("timestamp", "desc"));
+
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        let unreadCount = 0;
+        snapshot.docs.forEach((doc) => {
+          const msg = doc.data() as any;
+          if (!msg.readBy?.[user.uid] && msg.senderId !== user.uid) unreadCount += 1;
+        });
+
+        setUnreadCounts((prev) => ({ ...prev, [g.id]: unreadCount }));
+
+        if (unreadCount > (prevUnreadCounts.current[g.id] || 0) && chatUser?.id !== g.id) {
+          const audio = new Audio("/notify.mp3");
+          audio.play().catch(() => {});
+        }
+        prevUnreadCounts.current[g.id] = unreadCount;
+      },
+      (error: any) => {
+        if (error.code === "permission-denied") {
+          // Gracefully remove unread count for inaccessible group
+          setUnreadCounts((prev) => {
+            const newCounts = { ...prev };
+            delete newCounts[g.id];
+            return newCounts;
+          });
+        } else {
+          console.error("Error fetching group messages:", error);
+        }
+      }
+    );
+
+      unsubscribers.push(unsubscribe);
+    });
+
+    return () => unsubscribers.forEach((fn) => fn());
+  }, [users, groups, user, chatUser]);
+
+  // -------------------
+  // Handlers
+  // -------------------
+  const handleSelectUser = async (u: UserType) => {
+    if (chatUser?.id === u.id) return;
+
+    setChatUser(u);
+    setUnreadCounts((prev) => ({ ...prev, [u.id]: 0 }));
+
+    const q = query(collection(db, "chats", user!.uid, u.id), where("read", "==", false));
+    const snapshot = await getDocs(q);
+    const updates = snapshot.docs.map((docSnap) => updateDoc(docSnap.ref, { read: true }));
+    await Promise.all(updates);
+  };
+
+  const handleSelectGroup = async (g: Group) => {
+    setChatUser({
+      id: g.id,
+      username: g.name,
+      isGroup: true,
+      members: g.members,
+      avatar: g.avatar || `https://avatars.dicebear.com/api/identicon/${g.id}.svg`,
+    });
+
+    const messagesRef = collection(db, "groupChats", g.id, "messages");
+    const q = query(messagesRef, where(`readBy.${user!.uid}`, "==", false));
+    const snapshot = await getDocs(q);
+    const updates = snapshot.docs.map((docSnap) =>
+      updateDoc(docSnap.ref, { [`readBy.${user!.uid}`]: true })
+    );
+    await Promise.all(updates);
+
+    setUnreadCounts((prev) => ({ ...prev, [g.id]: 0 }));
+  };
+
+  const handleSignOut = async () => {
+    if (!user) return;
+
+    try {
+      isManualLogout.current = true;
+
+      const statusRef = ref(rtdb, `/status/${user.uid}`);
+      await rtdbSet(statusRef, false);
+
+      const userRef = doc(db, "users", user.uid);
+      await updateDoc(userRef, {
+        sessionId: null,
+        lastSeen: serverTimestamp(),
+      });
+
+      localStorage.removeItem("sessionId");
+      sessionIdRef.current = null;
+
+      await auth.signOut();
+
+      isManualLogout.current = false;
+
+      setUser(null);
+    } catch (err) {
+      console.error("Error signing out:", err);
+    }
+  };
+
+  const handleAddMember = async (memberId: string) => {
+    if (!selectedGroup) return;
+    const groupRef = doc(db, "groups", selectedGroup.id);
+    try {
+      await updateDoc(groupRef, { members: arrayUnion(memberId) });
+      setShowAddMemberModal(false);
+    } catch (err) {
+      console.error("Failed to add member:", err);
+    }
+  };
+
+  /*const handleRemoveMember = async (memberId: string) => {
+    if (!selectedGroup) return;
+    const groupRef = doc(db, "groups", selectedGroup.id);
+    try {
+      await updateDoc(groupRef, {
+        members: selectedGroup.members.filter((id) => id !== memberId),
+      });
+    } catch (err) {
+      console.error("Failed to remove member:", err);
+    }
+  };*/
+
+
+  const handleRemoveMember = async (memberId: string) => {
+    if (!selectedGroup) return;
+    const groupRef = doc(db, "groups", selectedGroup.id);
+
+    try {
+      // Remove the member in Firestore
+      const newMembers = selectedGroup.members.filter((id) => id !== memberId);
+      await updateDoc(groupRef, { members: newMembers });
+
+      // Update local group state to immediately reflect removal
+      setGroups((prev) =>
+        prev.map((g) =>
+          g.id === selectedGroup.id ? { ...g, members: newMembers } : g
+        )
+      );
+
+      // Optional: if the removed user is the current user, deselect chat
+      if (user?.uid === memberId && chatUser?.id === selectedGroup.id) {
+        setChatUser(null);
+      }
+
+      // Close Manage Members modal if necessary
+      setShowManageMembers(false);
+
+    } catch (err) {
+      console.error("Failed to remove member:", err);
+    }
+  };
+
+
+  const handleCreateGroupSubmit = async (groupName: string, avatar: string) => {
+    if (!user || user.role !== "Leader") return alert("Only leaders can create groups");
+    if (!groupName.trim()) return;
+    try {
+      await addDoc(collection(db, "groups"), {
+        name: groupName.trim(),
+        members: [user.uid],
+        avatar,
+        createdAt: serverTimestamp(),
+      });
+      setNewGroupName("");
+      setShowCreateGroupModal(false);
+    } catch (err) {
+      console.error(err);
+      alert("Failed to create group.");
+    }
+  };
+
+  // -------------------
+  // Render
+  // -------------------
+  if (loading)
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-gray-50 dark:bg-gray-900">
+        <p className="text-gray-600 dark:text-gray-300 text-lg animate-pulse">Loading...</p>
+      </div>
+    );
+
+  if (!user)
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50 dark:bg-gray-900 space-y-6 px-4">
+        <div className="w-full max-w-md">{showSignUp ? <SignUp /> : <SignIn />}</div>
+        <button
+          className="text-blue-600 dark:text-blue-400 hover:underline"
+          onClick={() => setShowSignUp(!showSignUp)}
+        >
+          {showSignUp ? "Already have an account? Sign In" : "Don't have an account? Sign Up"}
+        </button>
+      </div>
+    );
+
+  return (
+  <div className="flex min-h-screen bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-100">
+    {/* === Left Sidebar === */}
+    <aside className="w-full md:w-1/4 border-r border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex flex-col">
+      {/* Profile + Sign out */}
+      <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+        <div className="flex items-center space-x-3">
+          <img
+            src={user.avatar}
+            alt={user.username}
+            className="w-10 h-10 rounded-full object-cover"
+          />
+          <div>
+            <p className="font-semibold">{user.username}</p>
+            <p className="text-xs text-gray-500">{user.role}</p>
+          </div>
+        </div>
+        <button
+          onClick={handleSignOut}
+          className="text-sm px-3 py-1 bg-red-500 hover:bg-red-600 text-white rounded"
+        >
+          Sign out
+        </button>
+      </div>
+
+      {/* Chat lists */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-6">
+        {/* Private Chats */}
+        <div>
+          <h3 className="text-sm uppercase tracking-wide text-gray-500 mb-2">Private Chats</h3>
+          <ul className="space-y-1">
+            {users.map((u) => (
+              <li
+                key={u.id}
+                className={`flex justify-between items-center px-3 py-2 rounded cursor-pointer transition ${
+                  chatUser?.id === u.id
+                    ? "bg-blue-100 dark:bg-blue-700"
+                    : "hover:bg-gray-100 dark:hover:bg-gray-700"
+                }`}
+                onClick={() => handleSelectUser(u)}
+              >
+                <div className="flex items-center space-x-2">
+                  <img src={u.avatar} alt={u.username} className="w-8 h-8 rounded-full" />
+                  <span>{u.username}</span>
+                </div>
+                <div className="flex flex-col items-end">
+                  <span
+                    className={`text-xs ${
+                      userStatuses[u.id] ? "text-green-500" : "text-gray-400"
+                    }`}
+                  >
+                    {userStatuses[u.id] ? "Online" : "Offline"}
+                  </span>
+                  {unreadCounts[u.id] > 0 && (
+                    <span className="text-xs font-bold text-red-500">
+                      {unreadCounts[u.id]}
+                    </span>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        {/* Group Chats */}
+        <div>
+          <div className="flex justify-between items-center mb-2">
+            <h3 className="text-sm uppercase tracking-wide text-gray-500">Group Chats</h3>
+            {user.role === "Leader" && (
+              <button
+                onClick={() => setShowCreateGroupModal(true)}
+                className="text-xs px-2 py-1 bg-green-500 hover:bg-green-600 text-white rounded"
+              >
+                + New
+              </button>
+            )}
+          </div>
+
+          <ul className="space-y-1">
+            {groups.map((g) => (
+              <li
+                key={g.id}
+                className={`flex justify-between items-center px-3 py-2 rounded cursor-pointer transition ${
+                  chatUser?.id === g.id
+                    ? "bg-blue-100 dark:bg-blue-700"
+                    : "hover:bg-gray-100 dark:hover:bg-gray-700"
+                }`}
+                onClick={() => handleSelectGroup(g)}
+              >
+                <div className="flex items-center space-x-2">
+                  <img
+                    src={g.avatar || `https://api.dicebear.com/9.x/lorelei/svg?seed=${g.name}`}
+                    alt={g.name}
+                    className="w-8 h-8 rounded-full"
+                  />
+                  <span>{g.name}</span>
+                </div>
+
+                <div className="flex items-center space-x-1">
+                  {unreadCounts[g.id] > 0 && (
+                    <span className="text-xs font-bold text-red-500">
+                      {unreadCounts[g.id]}
+                    </span>
+                  )}
+                  {user.role === "Leader" && (
+                    <button
+                      className="text-xs px-2 py-0.5 bg-blue-500 text-white rounded hover:bg-blue-600"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedGroup(g);
+                        setShowManageMembers(true);
+                      }}
+                    >
+                      Manage
+                    </button>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    </aside>
+
+    {/* === Chat Area === */}
+    <main className="flex-1 flex flex-col border-r border-gray-200 dark:border-gray-700">
+      {chatUser ? (
+        <ChatBox
+          key={chatUser.id}
+          chatWithUserId={chatUser.id}
+          chatWithUsername={chatUser.username}
+          currentUserId={user.uid}
+          isGroup={chatUser.isGroup || false}
+          groupMembers={chatUser.members || []}
+        />
+      ) : (
+        <div className="flex items-center justify-center flex-1 text-gray-500">
+          Select a chat to start messaging
+        </div>
+      )}
+    </main>
+
+    {/* === Right Sidebar (free space) === */}
+    <aside className="hidden md:block w-1/4 bg-gray-50 dark:bg-gray-900 p-4">
+      {/* This space is reserved for future features */}
+    </aside>
+
+    {/* === Manage Members Modal (centered) === */}
+    {showManageMembers && selectedGroup && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center">
+        {/* Darker but clearer blur overlay */}
+        <div
+          className="absolute inset-0 bg-black/35 backdrop-blur-sm"
+          onClick={() => setShowManageMembers(false)}
+        />
+
+        {/* Modal content */}
+        <div className="relative bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-lg w-96 z-10">
+          <ManageMembersSidebar
+            group={selectedGroup}
+            users={users}
+            onAddMember={handleAddMember}
+            onRemoveMember={handleRemoveMember}
+            onClose={() => setShowManageMembers(false)}
+          />
+        </div>
+      </div>
+    )}
+
+    {/* === Modals === */}
+    {showCreateGroupModal && (
+      <CreateGroupModal
+        onClose={() => setShowCreateGroupModal(false)}
+        onSubmit={handleCreateGroupSubmit}
+      />
+    )}
+
+    {showAddMemberModal && selectedGroup && (
+      <AddMemberModal
+        group={selectedGroup}
+        users={users}
+        onAddMember={handleAddMember}
+        onClose={() => setShowAddMemberModal(false)}
+      />
+    )}
+  </div>
+);
+
+}

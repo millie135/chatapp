@@ -1,65 +1,83 @@
+"use client";
+
 import { useState } from "react";
 
 interface Props {
-  groupName: string;
-  onChangeGroupName: (name: string) => void;
-  onSubmit: (groupName: string, avatarUrl: string) => void;
   onClose: () => void;
+  onSubmit: (groupName: string, avatar: string) => void;
 }
 
-const generateAvatar = (name: string) =>
-  `https://api.dicebear.com/9.x/lorelei/svg?seed=${encodeURIComponent(name)}`;
+export default function CreateGroupModal({ onClose, onSubmit }: Props) {
+  const [groupName, setGroupName] = useState("");
+  const [avatar, setAvatar] = useState("");
 
-export default function CreateGroupModal({
-  groupName,
-  onChangeGroupName,
-  onSubmit,
-  onClose,
-}: Props) {
-  const [customAvatar, setCustomAvatar] = useState("");
-
-  const handleSubmit = () => {
-    // Use custom avatar if provided, otherwise generate DiceBear
-    const avatar = customAvatar.trim() || generateAvatar(groupName);
-    onSubmit(groupName, avatar);
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!groupName.trim()) return;
+    onSubmit(groupName.trim(), avatar.trim() || `https://avatars.dicebear.com/api/identicon/${groupName}.svg`);
+    setGroupName("");
+    setAvatar("");
   };
 
   return (
-    <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
-      <div className="bg-white dark:bg-gray-800 p-6 rounded shadow-lg w-80">
-        <h2 className="text-lg font-bold mb-4">Create New Group</h2>
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      {/* Darker blur overlay like ManageMembersSidebar */}
+      <div
+        className="absolute inset-0 bg-black/35 backdrop-blur-sm"
+        onClick={onClose} // clicking outside closes the modal
+      />
 
-        <input
-          type="text"
-          placeholder="Group Name"
-          className="w-full px-3 py-2 border rounded mb-2 dark:bg-gray-700 dark:text-white"
-          value={groupName}
-          onChange={(e) => onChangeGroupName(e.target.value)}
-        />
+      {/* Modal content */}
+      <div className="relative bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-6 w-96 z-10">
+        <h2 className="text-lg font-bold mb-4 text-gray-800 dark:text-gray-100">
+          Create New Group
+        </h2>
 
-        <input
-          type="text"
-          placeholder="Avatar URL (optional)"
-          className="w-full px-3 py-2 border rounded mb-4 dark:bg-gray-700 dark:text-white"
-          value={customAvatar}
-          onChange={(e) => setCustomAvatar(e.target.value)}
-        />
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Group Name */}
+          <div>
+            <label className="block mb-1 text-sm font-medium text-gray-700 dark:text-gray-200">Group Name</label>
+            <input
+              type="text"
+              value={groupName}
+              onChange={(e) => setGroupName(e.target.value)}
+              placeholder="Enter group name"
+              className="w-full p-2 border rounded text-gray-800 dark:text-gray-100 bg-gray-50 dark:bg-gray-700"
+              required
+            />
+          </div>
 
-        <div className="flex justify-end space-x-2">
-          <button
-            className="px-4 py-2 bg-gray-300 dark:bg-gray-600 text-gray-800 dark:text-white rounded hover:bg-gray-400"
-            onClick={onClose}
-          >
-            Cancel
-          </button>
-          <button
-            className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
-            onClick={handleSubmit}
-          >
-            Create
-          </button>
-        </div>
+          {/* Avatar URL */}
+          <div>
+            <label className="block mb-1 text-sm font-medium text-gray-700 dark:text-gray-200">Avatar URL (optional)</label>
+            <input
+              type="text"
+              value={avatar}
+              onChange={(e) => setAvatar(e.target.value)}
+              placeholder="Enter avatar URL or leave blank"
+              className="w-full p-2 border rounded text-gray-800 dark:text-gray-100 bg-gray-50 dark:bg-gray-700"
+            />
+          </div>
+
+          {/* Buttons */}
+          <div className="flex justify-end space-x-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-3 py-1 rounded bg-gray-300 dark:bg-gray-600 hover:bg-gray-400 dark:hover:bg-gray-500"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="px-3 py-1 rounded bg-blue-600 text-white hover:bg-blue-700"
+            >
+              Create
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );
+
 }
