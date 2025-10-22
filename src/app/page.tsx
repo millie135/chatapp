@@ -7,9 +7,11 @@ import ChatBox from "@/components/Chat/ChatBox";
 import ManageMembersSidebar from "@/components/Chat/ManageMembersSidebar";
 import AddMemberModal from "@/components/Modals/AddMemberModal";
 import CreateGroupModal from "@/components/Modals/CreateGroupModal";
-
+//import TimeManagement from "@/components/Time/TimeManagement";
+import TimeManagement, { TimeManagementHandle } from "@/components/Time/TimeManagement";
 import { UserType, Group } from "@/types";
 import { auth, db, rtdb } from "@/firebaseConfig";
+import { signOutUser } from "@/utils/auth";
 import {
   collection,
   onSnapshot,
@@ -31,13 +33,18 @@ import {
 } from "firebase/firestore";
 import { ref, set as rtdbSet, onDisconnect, onValue } from "firebase/database";
 
+
 export default function Home() {
   const [showSignUp, setShowSignUp] = useState(true);
   const [user, setUser] = useState<UserType | null>(null);
   const [users, setUsers] = useState<UserType[]>([]);
   const [chatUser, setChatUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [userStatuses, setUserStatuses] = useState<{ [key: string]: boolean }>({});
+  //const [userStatuses, setUserStatuses] = useState<{ [key: string]: boolean }>({});
+  type StatusType = "online" | "onBreak" | "offline";
+
+  const [userStatuses, setUserStatuses] = useState<{ [key: string]: StatusType }>({});
+
   const [unreadCounts, setUnreadCounts] = useState<{ [key: string]: number }>({});
   const prevUnreadCounts = useRef<{ [key: string]: number }>({});
   const [groups, setGroups] = useState<Group[]>([]);
@@ -53,12 +60,36 @@ export default function Home() {
   const [showManageMembers, setShowManageMembers] = useState(false);
   const isManualLogout = useRef(false);
   const groupListenersRef = useRef<{ [groupId: string]: () => void }>({});
+  // inside Home component
+  const timeManagementRef = useRef<TimeManagementHandle>(null);
 
+  // After user login (inside auth.onAuthStateChanged)
+  //timeManagementRef.current?.autoCheckIn();
+  useEffect(() => {
+    timeManagementRef.current?.autoCheckIn();
+  }, [user]);
 
   // -------------------
   // Firebase: Auth State + Single Session
   // -------------------
   useEffect(() => {
+    // Safe UUID generator (works even if crypto.randomUUID is missing)
+    function generateUUID(): string {
+      if (typeof crypto !== "undefined" && crypto.randomUUID) {
+        return crypto.randomUUID();
+      }
+      if (typeof crypto !== "undefined" && crypto.getRandomValues) {
+        // Fallback RFC4122-like random string
+        return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+          const r = crypto.getRandomValues(new Uint8Array(1))[0] % 16;
+          const v = c === "x" ? r : (r & 0x3) | 0x8;
+          return v.toString(16);
+        });
+      }
+      // Final fallback: basic random string
+      return Math.random().toString(36).substring(2) + Date.now().toString(36);
+    }
+
     const unsubscribe = auth.onAuthStateChanged(async (u) => {
       if (!u) {
         setUser(null);
@@ -73,7 +104,7 @@ export default function Home() {
 
           let localSessionId = localStorage.getItem("sessionId");
           if (!localSessionId) {
-            localSessionId = crypto.randomUUID();
+            localSessionId = generateUUID();
             localStorage.setItem("sessionId", localSessionId);
           }
 
@@ -102,7 +133,7 @@ export default function Home() {
           username: data?.username || u.email?.split("@")[0] || "User",
           avatar: data?.avatar || `https://avatars.dicebear.com/api/identicon/${u.uid}.svg`,
           email: data?.email || undefined,
-          role: data?.role || "user",
+          role: data?.role || roleFromToken || "user",
         });
       } catch (err: any) {
         alert(err.message);
@@ -253,7 +284,9 @@ export default function Home() {
     users.forEach((u) => {
       const statusRef = ref(rtdb, `/status/${u.id}`);
       const unsubscribe = onValue(statusRef, (snap) => {
-        setUserStatuses((prev) => ({ ...prev, [u.id]: snap.val() === true }));
+        //setUserStatuses((prev) => ({ ...prev, [u.id]: snap.val() === true }));
+        // Previously: snap.val() === true
+        setUserStatuses((prev) => ({ ...prev, [u.id]: snap.val() || "offline" }));
       });
       unsubscribers.push(unsubscribe);
     });
@@ -396,27 +429,11 @@ export default function Home() {
     if (!user) return;
 
     try {
-      isManualLogout.current = true;
-
-      const statusRef = ref(rtdb, `/status/${user.uid}`);
-      await rtdbSet(statusRef, false);
-
-      const userRef = doc(db, "users", user.uid);
-      await updateDoc(userRef, {
-        sessionId: null,
-        lastSeen: serverTimestamp(),
-      });
-
-      localStorage.removeItem("sessionId");
-      sessionIdRef.current = null;
-
-      await auth.signOut();
-
-      isManualLogout.current = false;
-
-      setUser(null);
+      await signOutUser(user.uid);
+      setUser(null); // Update local state after logout
     } catch (err) {
-      console.error("Error signing out:", err);
+      //console.error("Error signing out:", err);
+      alert("Error signing out.");
     }
   };
 
@@ -522,12 +539,16 @@ export default function Home() {
                   </div>
                   <div className="flex flex-col items-end">
                     <span
-                      className={`text-xs ${
-                        userStatuses[u.id] ? "text-green-500" : "text-gray-400"
+                      className={`inline-block w-3 h-3 rounded-full ${
+                        userStatuses[u.id] === "online"
+                          ? "bg-green-500"
+                          : userStatuses[u.id] === "onBreak"
+                          ? "bg-yellow-400"
+                          : "bg-gray-400"
                       }`}
-                    >
-                      {userStatuses[u.id] ? "Online" : "Offline"}
-                    </span>
+                    ></span>
+
+
                     {unreadCounts[u.id] > 0 && (
                       <span className="text-xs font-bold text-red-500">
                         {unreadCounts[u.id]}
@@ -600,7 +621,7 @@ export default function Home() {
       </aside>
 
       {/* === Chat Area === */}
-      <main className="flex-[4] flex flex-col border-r border-gray-200 dark:border-gray-700">
+      <main className="flex-[5] flex flex-col border-r border-gray-200 dark:border-gray-700">
         {chatUser ? (
           <ChatBox
             key={chatUser.id}
@@ -619,7 +640,7 @@ export default function Home() {
 
       {/* === Right Sidebar (free space) === */}
       <aside className="hidden md:flex flex-[5] bg-gray-50 dark:bg-gray-900 p-4">
-        {/* This space is reserved for future features */}
+        <TimeManagement userId={user.uid} ref={timeManagementRef} />
       </aside>
 
       {/* === Manage Members Modal (centered) === */}

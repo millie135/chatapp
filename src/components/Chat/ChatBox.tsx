@@ -43,7 +43,8 @@ interface UserProfile {
   id?: string;
   username: string;
   avatar: string;
-  online?: boolean;
+  //online?: boolean;
+  onlineStatus?: "online" | "onBreak" | "offline";
 }
 
 const emojiReactions = ["👍", "❤️", "😂", "😮", "😢", "😡"];
@@ -74,7 +75,7 @@ function escapeRegExp(string: string) {
 
 const ChatBox: FC<ChatBoxProps> = ({
   chatWithUserId,
-  chatWithUsername,
+  // chatWithUsername,
   currentUserId,
   isGroup = false,
   groupMembers = []
@@ -91,7 +92,7 @@ const ChatBox: FC<ChatBoxProps> = ({
   const emojiButtonRef = useRef<HTMLButtonElement>(null);
   const emojiPickerRef = useRef<HTMLDivElement>(null);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-  const [userStatuses, setUserStatuses] = useState<{ [key: string]: boolean }>({});
+  const [userStatuses, setUserStatuses] = useState<{ [key: string]: "online" | "onBreak" | "offline" }>({});
   const [showMembers, setShowMembers] = useState(false);
   const memberListRef = useRef<HTMLDivElement>(null);
   const memberButtonRef = useRef<HTMLDivElement>(null);
@@ -150,20 +151,22 @@ const ChatBox: FC<ChatBoxProps> = ({
     const unsubscribeProfile = onSnapshot(profileRef, docSnap => {
       if (docSnap.exists()) {
         const data = docSnap.data() as UserProfile;
-        setProfile(prev => ({ ...data, online: prev?.online }));
+        setProfile(prev => ({ ...data, onlineStatus: prev?.onlineStatus }));
       }
     });
 
+    // For 1-on-1 status
     const unsubscribeStatus = onValue(statusRef, snap => {
-      const isOnline = snap.val() === true;
-      setProfile(prev => prev ? { ...prev, online: isOnline } : { username: "", avatar: "", online: isOnline });
+      //const status = snap.val(); // "online" | "onBreak" | "offline"
+      const status = snap.val() || "offline";
+      setProfile(prev => prev ? { ...prev, onlineStatus: status } : { username: "", avatar: "", onlineStatus: status });
     });
 
     return () => {
       unsubscribeProfile();
       unsubscribeStatus();
     };
-  }, [chatWithUserId, chatWithUsername, isGroup]);
+  }, [chatWithUserId, isGroup]);
 
   // Track online/offline status for group members
   useEffect(() => {
@@ -174,7 +177,8 @@ const ChatBox: FC<ChatBoxProps> = ({
     groupMembers.forEach((memberId) => {
       const statusRef = rtdbRef(rtdb, `/status/${memberId}`);
       const unsubscribe = onValue(statusRef, (snap) => {
-        setUserStatuses((prev) => ({ ...prev, [memberId]: snap.val() === true }));
+        const status = snap.val(); // "online" | "onBreak" | "offline"
+        setUserStatuses(prev => ({ ...prev, [memberId]: status }));
       });
       unsubscribers.push(unsubscribe);
     });
@@ -206,33 +210,6 @@ const ChatBox: FC<ChatBoxProps> = ({
     };
     fetchProfiles();
   }, [isGroup, groupMembers]);
-
-  // Listen to messages
-  /*useEffect(() => {
-    const messagesRef = isGroup
-      ? collection(db, "groupChats", chatWithUserId, "messages")
-      : collection(db, "chats", currentUserId, chatWithUserId);
-
-    const q = query(messagesRef, orderBy("timestamp"));
-
-    const unsubscribe = onSnapshot(q, async snapshot => {
-      const msgs: Message[] = snapshot.docs.map(docSnap => ({ id: docSnap.id, ...(docSnap.data() as Omit<Message, "id">) }));
-      setMessages(msgs);
-
-      if (!isGroup) {
-        // mark unread as read only for 1-on-1
-        const batch: Promise<any>[] = [];
-        msgs.forEach(msg => {
-          if (!msg.read && msg.senderId === chatWithUserId) {
-            batch.push(setDoc(doc(db, "chats", currentUserId, chatWithUserId, msg.id), { read: true }, { merge: true }));
-          }
-        });
-        if (batch.length > 0) await Promise.all(batch);
-      }
-    });
-
-    return () => unsubscribe();
-  }, [chatWithUserId, currentUserId, isGroup]);*/
 
   // Listen to messages
   
@@ -375,19 +352,21 @@ const ChatBox: FC<ChatBoxProps> = ({
           <div>
             <div className="font-bold text-gray-900 dark:text-gray-100">{profile.username}</div>
             {!isGroup && (
-              <div
-                className={`text-sm ${
-                  profile.online ? "text-green-500" : "text-gray-500"
-                }`}
-              >
-                {profile.online ? "Online" : "Offline"}
+              <div className={`text-sm ${
+                profile.onlineStatus === "online" ? "text-green-500" :
+                profile.onlineStatus === "onBreak" ? "text-yellow-400" :
+                "text-gray-500"
+              }`}>
+                {profile.onlineStatus === "online" ? "Online" :
+                profile.onlineStatus === "onBreak" ? "On Break" :
+                "Offline"}
               </div>
             )}
             {isGroup && (
               <div className="flex dark:border-gray-700">
                 <div className="flex items-center space-x-2">
                   <div
-                    className="text-sm text-gray-500 dark:text-gray-400 cursor-pointer"
+                    className="text-sm text-gray-500 dark:text-gray-400 cursor-pointer relative"
                     onClick={() => setShowMembers(prev => !prev)}
                   >
                     {groupMemberProfiles.length} members
@@ -408,8 +387,11 @@ const ChatBox: FC<ChatBoxProps> = ({
                         src={member.avatar || `https://avatars.dicebear.com/api/identicon/${member.id}.svg`}
                         alt={member.username}
                         className={`w-6 h-6 rounded-full border-2 border-white ${
-                          online ? "ring-2 ring-green-500" : "ring-2 ring-gray-400"
+                          status === "online" ? "ring-2 ring-green-500" :
+                          status === "onBreak" ? "ring-2 ring-yellow-400" :
+                          "ring-2 ring-gray-400"
                         }`}
+                        title={status.charAt(0).toUpperCase() + status.slice(1)}
                       />
                     );
                   })}
@@ -428,7 +410,17 @@ const ChatBox: FC<ChatBoxProps> = ({
           <h3 className="font-semibold mb-2 text-gray-800 dark:text-gray-100">Group Members</h3>
           <ul className="space-y-2 max-h-64 overflow-y-auto">
             {groupMemberProfiles.map((member) => {
-              const online = userStatuses[member.id!] || false;
+              //const online = userStatuses[member.id!] || false;
+              const status = userStatuses[member.id!] || "offline"; // "online" | "onBreak" | "offline"
+              const statusColor =
+                status === "online" ? "text-green-500" :
+                status === "onBreak" ? "text-yellow-400" :
+                "text-gray-500";
+
+              const statusText =
+                status === "online" ? "Online" :
+                status === "onBreak" ? "On Break" :
+                "Offline";
               return (
                 <li key={member.id} className="flex items-center space-x-2">
                   <img
@@ -438,9 +430,10 @@ const ChatBox: FC<ChatBoxProps> = ({
                   />
                   <div className="flex-1">
                     <div className="text-sm font-medium text-gray-900 dark:text-gray-100">{member.username}</div>
-                    <div className={`text-xs ${online ? "text-green-500" : "text-gray-500"}`}>
+                    {/* <div className={`text-xs ${online ? "text-green-500" : "text-gray-500"}`}>
                       {online ? "Online" : "Offline"}
-                    </div>
+                    </div> */}
+                    <div className={`text-xs ${statusColor}`}>{statusText}</div>
                   </div>
                 </li>
               );
@@ -471,9 +464,18 @@ const ChatBox: FC<ChatBoxProps> = ({
                 {isGroup && !isSender && (
                   <span
                     className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-white ${
-                      userStatuses[msg.senderId] ? "bg-green-500" : "bg-gray-400"
+                      userStatuses[msg.senderId] === "online" ? "bg-green-500" :
+                      userStatuses[msg.senderId] === "onBreak" ? "bg-yellow-400" :
+                      "bg-gray-400"
                     }`}
-                    title={userStatuses[msg.senderId] ? "Online" : "Offline"}
+                    // title={userStatuses[msg.senderId]}
+                    title={
+                      (() => {
+                        const status = userStatuses[msg.senderId];
+                        const statusStr = typeof status === "string" ? status : (status ? "Online" : "Offline");
+                        return statusStr.charAt(0).toUpperCase() + statusStr.slice(1);
+                      })()
+                    }
                   />
                 )}
               </div>
