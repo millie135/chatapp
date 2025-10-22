@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { auth, db } from "@/firebaseConfig";
+import { auth, db, rtdb } from "@/firebaseConfig";
 import { createUserWithEmailAndPassword } from "firebase/auth";
 import { doc, setDoc } from "firebase/firestore";
+import { ref as rtdbRef, set as rtdbSet } from "firebase/database";
 
 export default function SignUp() {
   const [email, setEmail] = useState("");
@@ -35,6 +36,12 @@ export default function SignUp() {
         avatar: avatarUrl,
         createdAt: new Date()
       });
+
+      // ------------------------
+      // Set Realtime DB status immediately
+      // ------------------------
+      const statusRef = rtdbRef(rtdb, `/status/${user.uid}`);
+      await rtdbSet(statusRef, "online"); // or true if you use boolean
 
       setSuccess("Account created successfully!");
       setEmail(""); setPassword(""); setUsername(""); setAvatar("");
